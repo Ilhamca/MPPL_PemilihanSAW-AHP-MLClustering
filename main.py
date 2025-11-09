@@ -20,9 +20,14 @@ st.markdown("### Metode Hybrid: AHP + SAW dengan Machine Learning (K-Means)")
 # Sidebar navigation
 menu = st.sidebar.selectbox(
     "Menu Navigasi",
-    ["Home", "Input Data Laptop", "Pembobotan Kriteria (AHP)", "Clustering (K-Means)", 
+    ["Home", "Upload Data Laptop","Clustering (K-Means)", "Pembobotan Kriteria (AHP)", 
      "Perankingan (SAW)", "Hasil Rekomendasi"]
 )
+
+# Global Var
+laptop_features = ['Harga', 'Prosesor_Score', 'RAM', 'Storage', 'GPU_Score', 'Baterai', 'Bobot']
+weights = None
+
 
 # Initialize session state
 if 'laptops_data' not in st.session_state:
@@ -33,6 +38,14 @@ if 'clusters' not in st.session_state:
     st.session_state.clusters = None
 if 'saw_results' not in st.session_state:
     st.session_state.saw_results = None
+# category holds important variables used by KMeans clustering so they are globally accessible
+if 'category' not in st.session_state:
+    st.session_state.category = {
+        'numeric_cols': laptop_features.copy(),
+        'n_clusters': 3,
+        'cluster_names': [],
+        'available_cols': []
+    }
 
 # ============= HOME PAGE =============
 if menu == "Home":
@@ -47,9 +60,9 @@ if menu == "Home":
         menggunakan metode ilmiah dan machine learning.
         
         **Metode yang Digunakan:**
+        - **K-Means Clustering**: Pengelompokan laptop berdasarkan karakteristik
         - **AHP (Analytical Hierarchy Process)**: Pembobotan kriteria
         - **SAW (Simple Additive Weighting)**: Perankingan alternatif
-        - **K-Means Clustering**: Pengelompokan laptop berdasarkan karakteristik
         """)
     
     with col2:
@@ -68,70 +81,30 @@ if menu == "Home":
     st.info("👈 Gunakan menu sidebar untuk mulai menggunakan sistem")
 
 # ============= INPUT DATA LAPTOP =============
-elif menu == "Input Data Laptop":
-    st.header("📝 Input Data Laptop")
-    
-    tab1, tab2 = st.tabs(["Input Manual", "Upload CSV"])
-    
-    with tab1:
-        st.subheader("Tambah Data Laptop")
-        with st.form("laptop_form"):
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                nama = st.text_input("Nama Laptop")
-                harga = st.number_input("Harga (Juta Rupiah)", min_value=0.0, step=0.1)
-                prosesor = st.selectbox("Tipe Prosesor", 
-                    ["Intel i3", "Intel i5", "Intel i7", "Intel i9", "AMD Ryzen 3", 
-                     "AMD Ryzen 5", "AMD Ryzen 7", "AMD Ryzen 9"])
-                ram = st.number_input("RAM (GB)", min_value=4, max_value=64, step=4)
-            
-            with col2:
-                storage = st.number_input("Storage (GB)", min_value=128, max_value=2048, step=128)
-                gpu = st.selectbox("GPU", ["Integrated", "MX Series", "GTX Series", "RTX Series"])
-                baterai = st.number_input("Baterai (Wh)", min_value=30, max_value=100, step=5)
-                bobot = st.number_input("Bobot (kg)", min_value=0.5, max_value=3.0, step=0.1)
-            
-            submitted = st.form_submit_button("Tambah Laptop")
-            
-            if submitted and nama:
-                # Convert processor and GPU to numeric scores
-                proc_score = {"Intel i3": 3, "Intel i5": 5, "Intel i7": 7, "Intel i9": 9,
-                             "AMD Ryzen 3": 3, "AMD Ryzen 5": 5, "AMD Ryzen 7": 7, "AMD Ryzen 9": 9}
-                gpu_score = {"Integrated": 1, "MX Series": 2, "GTX Series": 3, "RTX Series": 4}
-                
-                new_data = pd.DataFrame([{
-                    'Nama': nama,
-                    'Harga': harga,
-                    'Prosesor': prosesor,
-                    'Prosesor_Score': proc_score.get(prosesor, 5),
-                    'RAM': ram,
-                    'Storage': storage,
-                    'GPU': gpu,
-                    'GPU_Score': gpu_score.get(gpu, 1),
-                    'Baterai': baterai,
-                    'Bobot': bobot
-                }])
-                
-                if st.session_state.laptops_data.empty:
-                    st.session_state.laptops_data = new_data
-                else:
-                    st.session_state.laptops_data = pd.concat([st.session_state.laptops_data, new_data], 
-                                                              ignore_index=True)
-                st.success(f"✅ Laptop '{nama}' berhasil ditambahkan!")
-                st.rerun()
-    
-    with tab2:
-        st.subheader("Upload Data CSV")
-        st.write("Format CSV: Nama, Harga, Prosesor, RAM, Storage, GPU, Baterai, Bobot")
-        
-        uploaded_file = st.file_uploader("Pilih file CSV", type=['csv'])
-        if uploaded_file is not None:
-            try:
-                st.session_state.laptops_data = pd.read_csv(uploaded_file)
-                st.success(f"✅ Berhasil memuat {len(st.session_state.laptops_data)} data laptop!")
-            except Exception as e:
-                st.error(f"Error: {e}")
+elif menu == "Upload Data Laptop":
+    st.subheader("Upload Data CSV")
+    st.write("Format CSV: Company,TypeName,Inches,ScreenResolution,Cpu,Ram,Memory,Gpu,OpSys,Weight,Price")
+    st.write("Contoh format data:")
+    st.table(pd.DataFrame({
+        "Company": ["Company A", "Company B"],
+        "TypeName": ["Gaming", "Ultrabook"],
+        "Inches": [15.6, 13.3],
+        "ScreenResolution": ["IPS 1920x1080", "FULL HD 2560x1600"],
+        "Cpu": ["Intel Core i5 2.3GHz", "AMD A9-Series A9-9420 3GHz"],
+        "Ram": ["8GB", "16GB"],
+        "Memory": ["512 HDD", "1024 SSD"],
+        "Gpu": ["Nvidia GeForce GTX 1050 Ti", "AMD Radeon RX 580"],
+        "OpSys": ["Windows 10", "Linux"],
+        "Weight": ["1.5 kg", "2.0 kg"],
+        "Price (Euro)": ["69210.72", "213.12"]
+    }))
+    uploaded_file = st.file_uploader("Pilih file CSV", type=['csv'])
+    if uploaded_file is not None:
+        try:
+            st.session_state.laptops_data = pd.read_csv(uploaded_file)
+            st.success(f"✅ Berhasil memuat {len(st.session_state.laptops_data)} data laptop!")
+        except Exception as e:
+            st.error(f"Error: {e}")
     
     # Display current data
     if not st.session_state.laptops_data.empty:
@@ -141,6 +114,169 @@ elif menu == "Input Data Laptop":
         if st.button("🗑️ Hapus Semua Data"):
             st.session_state.laptops_data = pd.DataFrame()
             st.rerun()
+
+# ============= K-MEANS CLUSTERING =============
+elif menu == "Clustering (K-Means)":
+    st.header("🔍 K-Means Clustering")
+    
+    if st.session_state.laptops_data.empty:
+        st.warning("⚠️ Belum ada data laptop. Silakan input data terlebih dahulu.")
+    else:
+        pd_original = st.session_state.laptops_data.copy()  # keep original data
+        pd = st.session_state.laptops_data.copy()
+        pd = pd.loc[:, ~pd.columns.str.startswith("Unnamed")]  # drop unnamed columns if any
+        
+        # initialize top-level keys so widgets are controlled; default EMPTY on first open
+        if 'selected_companies' not in st.session_state:
+            st.session_state['selected_companies'] = []
+        if 'selected_types' not in st.session_state:
+            st.session_state['selected_types'] = []
+
+        # callbacks to sync nested category without trying to write the widget key
+        def _sync_selected_companies():
+            st.session_state.category['selected_companies'] = st.session_state.get('selected_companies', [])
+
+        def _sync_selected_types():
+            st.session_state.category['selected_types'] = st.session_state.get('selected_types', [])
+
+        # Do NOT assign the multiselect return directly into st.session_state (avoids modifying widget key)
+        st.multiselect(
+            "Pilih Company untuk Clustering",
+            options=pd['Company'].unique().tolist(),
+            key='selected_companies',
+            on_change=_sync_selected_companies
+        )
+
+        st.multiselect(
+            "Pilih TypeName untuk Clustering",
+            options=pd['TypeName'].unique().tolist(),
+            key='selected_types',
+            on_change=_sync_selected_types
+        )
+
+        # Select All and Clear Filter buttons placed side-by-side
+        col1, col2 = st.columns(2, gap="small", vertical_alignment="bottom", width=260)
+
+        # use on_click callbacks (safe to mutate widget keys here)
+        def _select_all():
+            st.session_state['selected_companies'] = pd_original['Company'].unique().tolist()
+            st.session_state['selected_types'] = pd_original['TypeName'].unique().tolist()
+            st.session_state.category['selected_companies'] = st.session_state['selected_companies']
+            st.session_state.category['selected_types'] = st.session_state['selected_types']
+
+        def _clear_all():
+            st.session_state['selected_companies'] = []
+            st.session_state['selected_types'] = []
+            st.session_state.category['selected_companies'] = []
+            st.session_state.category['selected_types'] = []
+
+        col1.button("Select All", key="select_all", on_click=_select_all)
+        col2.button("Clear All Filter", key="clear_filter", on_click=_clear_all)
+
+        st.divider()
+        
+        # Apply filters only for columns that exist to avoid empty/no-op filtering
+        if 'Company' in pd.columns and 'TypeName' in pd.columns:
+            pd = pd[
+                pd['Company'].isin(st.session_state.category.get('selected_companies', [])) &
+                pd['TypeName'].isin(st.session_state.category.get('selected_types', []))
+            ]
+        elif 'Company' in pd.columns:
+            pd = pd[pd['Company'].isin(st.session_state.category.get('selected_companies', []))]
+        elif 'TypeName' in pd.columns:
+            pd = pd[pd['TypeName'].isin(st.session_state.category.get('selected_types', []))]
+        
+        # Convert categorical to numeric if not already done
+        if 'Prosesor_Score' not in pd.columns:
+            proc_score = {"Intel i3": 3, "Intel i5": 5, "Intel i7": 7, "Intel i9": 9,
+                         "AMD Ryzen 3": 3, "AMD Ryzen 5": 5, "AMD Ryzen 7": 7, "AMD Ryzen 9": 9}
+            if 'Cpu' in pd.columns:
+                pd['Prosesor_Score'] = pd['Cpu'].map(proc_score).fillna(5)
+
+        if 'GPU_Score' not in pd.columns:
+            gpu_score = {"Integrated": 1, "MX Series": 2, "GTX Series": 3, "RTX Series": 4}
+            if 'Gpu' in pd.columns:
+                pd['GPU_Score'] = pd['Gpu'].map(gpu_score).fillna(1)
+
+        # Show converted Data
+        st.subheader("Conversi dan Filtrasi Data Laptop")
+        st.dataframe(pd, width='stretch')
+
+        st.divider()
+
+        # Select features for clustering (use global category in session_state)
+        numeric_cols = st.session_state.category.get('numeric_cols', ['Harga', 'Prosesor_Score', 'RAM', 'Storage', 'GPU_Score', 'Baterai', 'Bobot'])
+        available_cols = [col for col in numeric_cols if col in pd.columns]
+        # persist available cols
+        st.session_state.category['available_cols'] = available_cols
+
+        if len(available_cols) < 3:
+            st.error("Data tidak lengkap untuk clustering. Pastikan semua kolom tersedia.")
+        else:
+            n_clusters = st.slider("Jumlah Cluster", 2, 5, st.session_state.category.get('n_clusters', 3))
+            # persist selected n_clusters
+            st.session_state.category['n_clusters'] = n_clusters
+
+            col1, col2 = st.columns([1, 2])
+
+            with col1:
+                st.subheader("Kategori Cluster")
+                cluster_names = []
+                for i in range(n_clusters):
+                    default_name = st.session_state.category.get('cluster_names', [f"Kategori {j+1}" for j in range(n_clusters)])[i] if st.session_state.category.get('cluster_names') and len(st.session_state.category.get('cluster_names'))>=n_clusters else f"Kategori {i+1}"
+                    name = st.text_input(f"Nama Cluster {i}", default_name, key=f"cluster_{i}")
+                    cluster_names.append(name)
+                # persist cluster names
+                st.session_state.category['cluster_names'] = cluster_names
+
+            if st.button("Jalankan Clustering"):
+                # Prepare data
+                X = pd[available_cols].fillna(0)
+
+                # Standardize features
+                scaler = StandardScaler()
+                X_scaled = scaler.fit_transform(X)
+
+                # Apply K-Means
+                kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
+                clusters = kmeans.fit_predict(X_scaled)
+
+                # Add cluster labels to local df and persist back to session_state
+                pd['Cluster'] = clusters
+                pd['Kategori'] = [st.session_state.category['cluster_names'][c] for c in clusters]
+                st.session_state.laptops_data = pd
+                st.session_state.clusters = kmeans
+                # persist category state
+                st.session_state.category['n_clusters'] = n_clusters
+                st.session_state.category['available_cols'] = available_cols
+
+                st.success(f"✅ Clustering berhasil! Laptop dikelompokkan ke dalam {n_clusters} kategori.")
+
+            with col2:
+                if 'Cluster' in pd.columns:
+                    st.subheader("Visualisasi Cluster")
+
+                    # 3D scatter plot
+                    fig = px.scatter_3d(
+                        pd,
+                        x='Harga', y='RAM', z='Prosesor_Score',
+                        color='Kategori',
+                        hover_data=['Nama'],
+                        title='Visualisasi Clustering Laptop'
+                    )
+                    st.plotly_chart(fig, use_container_width=True)
+
+            # Display clustered data
+            if 'Cluster' in pd.columns:
+                st.subheader("📊 Hasil Clustering")
+                st.dataframe(pd, use_container_width=True)
+
+                # Cluster statistics
+                st.subheader("📈 Statistik per Cluster")
+                for i in range(n_clusters):
+                    with st.expander(f"{cluster_names[i]} - {len(pd[pd['Cluster']==i])} laptop"):
+                        cluster_data = pd[pd['Cluster']==i]
+                        st.write(cluster_data[['Nama', 'Harga', 'RAM', 'Storage']].describe())
 
 # ============= AHP WEIGHTING =============
 elif menu == "Pembobotan Kriteria (AHP)":
@@ -179,109 +315,65 @@ elif menu == "Pembobotan Kriteria (AHP)":
             comparison_matrix[i][j] = value
             comparison_matrix[j][i] = 1/value
     
+    # Calculate weights using eigenvector method
+    eigenvalues, eigenvectors = np.linalg.eig(comparison_matrix)
+    max_eigenvalue_index = np.argmax(eigenvalues.real)
+    principal_eigenvector = eigenvectors[:, max_eigenvalue_index].real
     
+    # Consistency Index and Ratio calculation
+    # Consistency check (CI and CR)
+    # Random Index (RI) values for matrix sizes 1..10 (Saaty's table)
+    RI = {1:0.0, 2:0.0, 3:0.58, 4:0.90, 5:1.12, 6:1.24, 7:1.32, 8:1.41, 9:1.45, 10:1.49}
 
-    if st.button("Hitung Bobot AHP"):
-        # Calculate weights using eigenvector method
-        eigenvalues, eigenvectors = np.linalg.eig(comparison_matrix)
-        max_eigenvalue_index = np.argmax(eigenvalues.real)
-        principal_eigenvector = eigenvectors[:, max_eigenvalue_index].real
-        
-        # Normalize to get weights
-        weights = principal_eigenvector / principal_eigenvector.sum()
-        
-        # Store weights
-        st.session_state.ahp_weights = {criteria[i]: weights[i] for i in range(n)}
-        
-        # Display results
-        st.subheader("📊 Hasil Pembobotan")
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            weights_df = pd.DataFrame({
-                'Kriteria': criteria,
-                'Bobot': [weights[i] for i in range(n)],
-                'Persentase': [f"{weights[i]*100:.2f}%" for i in range(n)]
-            })
-            st.dataframe(weights_df, use_container_width=True)
-        
-        with col2:
-            fig = px.pie(weights_df, values='Bobot', names='Kriteria', 
-                        title='Distribusi Bobot Kriteria')
-            st.plotly_chart(fig, use_container_width=True)
-        
-# ============= K-MEANS CLUSTERING =============
-elif menu == "Clustering (K-Means)":
-    st.header("🔍 K-Means Clustering")
-    
-    if st.session_state.laptops_data.empty:
-        st.warning("⚠️ Belum ada data laptop. Silakan input data terlebih dahulu.")
+    # Largest eigenvalue (real part)
+    lambda_max = eigenvalues.real[max_eigenvalue_index]
+    if n > 1:
+        CI = (lambda_max - n) / (n - 1)
     else:
-        st.write("Mengelompokkan laptop berdasarkan karakteristik untuk tipe pengguna yang berbeda.")
-        
-        # Select features for clustering
-        numeric_cols = ['Harga', 'Prosesor_Score', 'RAM', 'Storage', 'GPU_Score', 'Baterai', 'Bobot']
-        available_cols = [col for col in numeric_cols if col in st.session_state.laptops_data.columns]
-        
-        if len(available_cols) < 3:
-            st.error("Data tidak lengkap untuk clustering. Pastikan semua kolom tersedia.")
-        else:
-            n_clusters = st.slider("Jumlah Cluster", 2, 5, 3)
+        CI = 0.0
+
+    RI_n = RI.get(n, None)
+    if RI_n is None or RI_n == 0:
+        CR = 0.0
+    else:
+        CR = CI / RI_n
+
+    st.write(f"• Lambda max: {lambda_max:.4f}")
+    st.write(f"• Consistency Index (CI): {CI:.4f}")
+    st.write(f"• Consistency Ratio (CR): {CR:.4f}")
+
+    if RI_n is None:
+        st.warning("RI belum tersedia untuk ukuran matriks ini; tidak dapat mengevaluasi CR secara akurat.")
+    elif CR > 0.1:
+        st.error("⚠️ Konsistensi perbandingan berpasangan rendah (CR > 0.1). Pertimbangkan untuk meninjau nilai perbandingan.")
+        # Set st.button("Hitung Bobot AHP") to disabled state
+        st.session_state.ahp_calculated = False
+    else:
+        st.success("✅ Konsistensi perbandingan berpasangan OK (CR <= 0.1).")
+        if st.button("Hitung Bobot AHP"):
+            # Normalize to get weights
+            weights = principal_eigenvector / principal_eigenvector.sum()
             
-            col1, col2 = st.columns([1, 2])
+            # Store weights
+            st.session_state.ahp_weights = {criteria[i]: weights[i] for i in range(n)}
+            
+            # Display results
+            st.subheader("📊 Hasil Pembobotan")
+            
+            col1, col2 = st.columns(2)
             
             with col1:
-                st.subheader("Kategori Cluster")
-                cluster_names = []
-                for i in range(n_clusters):
-                    name = st.text_input(f"Nama Cluster {i}", f"Kategori {i+1}", key=f"cluster_{i}")
-                    cluster_names.append(name)
-            
-            if st.button("Jalankan Clustering"):
-                # Prepare data
-                X = st.session_state.laptops_data[available_cols].fillna(0)
-                
-                # Standardize features
-                scaler = StandardScaler()
-                X_scaled = scaler.fit_transform(X)
-                
-                # Apply K-Means
-                kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
-                clusters = kmeans.fit_predict(X_scaled)
-                
-                # Add cluster labels
-                st.session_state.laptops_data['Cluster'] = clusters
-                st.session_state.laptops_data['Kategori'] = [cluster_names[c] for c in clusters]
-                st.session_state.clusters = kmeans
-                
-                st.success(f"✅ Clustering berhasil! Laptop dikelompokkan ke dalam {n_clusters} kategori.")
+                weights_df = pd.DataFrame({
+                    'Kriteria': criteria,
+                    'Bobot': [weights[i] for i in range(n)],
+                    'Persentase': [f"{weights[i]*100:.2f}%" for i in range(n)]
+                })
+                st.dataframe(weights_df, use_container_width=True)
             
             with col2:
-                if 'Cluster' in st.session_state.laptops_data.columns:
-                    st.subheader("Visualisasi Cluster")
-                    
-                    # 3D scatter plot
-                    fig = px.scatter_3d(
-                        st.session_state.laptops_data,
-                        x='Harga', y='RAM', z='Prosesor_Score',
-                        color='Kategori',
-                        hover_data=['Nama'],
-                        title='Visualisasi Clustering Laptop'
-                    )
-                    st.plotly_chart(fig, use_container_width=True)
-            
-            # Display clustered data
-            if 'Cluster' in st.session_state.laptops_data.columns:
-                st.subheader("📊 Hasil Clustering")
-                st.dataframe(st.session_state.laptops_data, use_container_width=True)
-                
-                # Cluster statistics
-                st.subheader("📈 Statistik per Cluster")
-                for i in range(n_clusters):
-                    with st.expander(f"{cluster_names[i]} - {len(st.session_state.laptops_data[st.session_state.laptops_data['Cluster']==i])} laptop"):
-                        cluster_data = st.session_state.laptops_data[st.session_state.laptops_data['Cluster']==i]
-                        st.write(cluster_data[['Nama', 'Harga', 'RAM', 'Storage']].describe())
+                fig = px.pie(weights_df, values='Bobot', names='Kriteria', 
+                            title='Distribusi Bobot Kriteria')
+                st.plotly_chart(fig, use_container_width=True)
 
 # ============= SAW RANKING =============
 elif menu == "Perankingan (SAW)":
