@@ -181,6 +181,7 @@ elif menu == "Clustering (K-Means)":
         col2.button("Clear All Filter", key="clear_filter", on_click=_clear_all)
 
         # Quick lil info
+        # REMEMBER TO DELETE IF DONE
         pd.info()
         pd.dtypes
 
@@ -208,11 +209,60 @@ elif menu == "Clustering (K-Means)":
         
         # Weight column (Only takes number)
         pd['Weight'] = pd['Weight'].str.replace('kg', '').astype(float)
-        pd.rename(columns={'Weight': 'Weight (kg)'}, inplace=True)
+        pd.rename(columns={'Weight': 'Weight (KG)'}, inplace=True)
 
         # Memory column
-        pd['Memory'] = pd['Memory'].str.replace('GB', '').astype(float)
+        # Add Memory value and divide 1 for SSD/Flash Drive and 0 for HDD
+        pd['Memory_Value'] = pd['Memory'].apply(lambda x: 1 if 'SSD' in x.upper() else 0)
+        # Moves Memory_Value column next to Memory column
+        if 'Memory' in pd.columns and 'Memory_Value' in pd.columns:
+            cols = list(pd.columns)
+            # ensure Memory_Value is removed then inserted immediately after Memory
+            cols.remove('Memory_Value')
+            mem_idx = cols.index('Memory')
+            cols.insert(mem_idx + 1, 'Memory_Value')
+            pd = pd[cols]
+        # Removes letters from Memory except '+'
+        for idx, val in pd['Memory'].items():
+            # If Numbers contain value 'TB', convert to GB by multiplying with 1024
+            if 'TB' in val.upper():
+                num_part = ''.join([c for c in val if c.isdigit() or c == '+'])
+                try:
+                    num_gb = float(num_part) * 1024
+                    pd.at[idx, 'Memory'] = str(int(num_gb))  # store as string without decimal
+                except:
+                    pass  # if conversion fails, skip
+            else:
+                clean_val = ''.join([c for c in val if c.isdigit() or c == '+'])
+                pd.at[idx, 'Memory'] = clean_val
+            
+            # Handle cases with multiple storages (e.g., "256GB SSD + 1TB HDD")
+            if '+' in val:
+                parts = val.split('+')
+                total_storage = 0
+                for part in parts:
+                    part = part.strip()
+                    if 'TB' in part.upper():
+                        num_part = ''.join([c for c in part if c.isdigit()])
+                        try:
+                            total_storage += float(num_part) * 1024
+                        except:
+                            pass
+                    else:
+                        num_part = ''.join([c for c in part if c.isdigit()])
+                        try:
+                            total_storage += float(num_part)
+                        except:
+                            pass
+                pd.at[idx, 'Memory'] = str(int(total_storage))  # store as string without decimal
+
+        # Convert and Change Name
+        pd['Memory'] = pd['Memory'].astype(float)
         pd.rename(columns={'Memory': 'Memory (GB)'}, inplace=True)
+
+        # Cpu Column
+        # One hot encode Cpu Brand (Only first Word)
+        pd = pd.join(pd['Cpu'].str.split(expand=True).iloc[:, 0].str.get_dummies())
 
         # Show converted Data
         if pd.empty:
