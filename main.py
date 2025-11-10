@@ -98,6 +98,13 @@ elif menu == "Upload Data Laptop":
         "Weight": ["1.5 kg", "2.0 kg"],
         "Price (Euro)": ["69210.72", "213.12"]
     }))
+    
+    # More general information on data upload
+    st.write("""
+    Catatan:
+    - Semua RAM Asumsi dalam generasi yang sama
+    """)
+
     uploaded_file = st.file_uploader("Pilih file CSV", type=['csv'])
     if uploaded_file is not None:
         try:
@@ -173,8 +180,15 @@ elif menu == "Clustering (K-Means)":
         col1.button("Select All", key="select_all", on_click=_select_all)
         col2.button("Clear All Filter", key="clear_filter", on_click=_clear_all)
 
+        # Quick lil info
+        pd.info()
+        pd.dtypes
+
         st.divider()
         
+        # Remove all empty data
+        pd = pd.dropna()
+
         # Apply filters only for columns that exist to avoid empty/no-op filtering
         if 'Company' in pd.columns and 'TypeName' in pd.columns:
             pd = pd[
@@ -186,23 +200,28 @@ elif menu == "Clustering (K-Means)":
         elif 'TypeName' in pd.columns:
             pd = pd[pd['TypeName'].isin(st.session_state.category.get('selected_types', []))]
         
-        # Convert categorical to numeric if not already done
-        if 'Prosesor_Score' not in pd.columns:
-            proc_score = {"Intel i3": 3, "Intel i5": 5, "Intel i7": 7, "Intel i9": 9,
-                         "AMD Ryzen 3": 3, "AMD Ryzen 5": 5, "AMD Ryzen 7": 7, "AMD Ryzen 9": 9}
-            if 'Cpu' in pd.columns:
-                pd['Prosesor_Score'] = pd['Cpu'].map(proc_score).fillna(5)
+        # Convert columns into possible float64
+        # Ram column
+        # TODO: Separate DDR4 and DDR5 if needed
+        pd['Ram'] = pd['Ram'].str.replace('GB', '').astype(float)
+        pd.rename(columns={'Ram': 'Ram (GB)'}, inplace=True)
+        
+        # Weight column (Only takes number)
+        pd['Weight'] = pd['Weight'].str.replace('kg', '').astype(float)
+        pd.rename(columns={'Weight': 'Weight (kg)'}, inplace=True)
 
-        if 'GPU_Score' not in pd.columns:
-            gpu_score = {"Integrated": 1, "MX Series": 2, "GTX Series": 3, "RTX Series": 4}
-            if 'Gpu' in pd.columns:
-                pd['GPU_Score'] = pd['Gpu'].map(gpu_score).fillna(1)
+        # Memory column
+        pd['Memory'] = pd['Memory'].str.replace('GB', '').astype(float)
+        pd.rename(columns={'Memory': 'Memory (GB)'}, inplace=True)
 
         # Show converted Data
-        st.subheader("Conversi dan Filtrasi Data Laptop")
-        st.dataframe(pd, width='stretch')
-
-        st.divider()
+        if pd.empty:
+            st.warning("Tidak ada data yang cocok dengan filter yang diterapkan.")
+        else:
+            st.subheader("Filtered Data Laptop")
+            st.dataframe(pd, width='stretch')
+            pd.info()
+            pd.dtypes
 
         # Select features for clustering (use global category in session_state)
         numeric_cols = st.session_state.category.get('numeric_cols', ['Harga', 'Prosesor_Score', 'RAM', 'Storage', 'GPU_Score', 'Baterai', 'Bobot'])
