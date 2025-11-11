@@ -2,7 +2,9 @@
 
 ### TODO:
 
-- Add function to converts CPU and GPU into their perspective mark
+- ✅  ~~Add function to converts CPU and GPU into their perspective mark~~
+
+- [ ] Update clustering to use st.state_session instead of pandas df
 
 ## Perencanaan:
 a. Implementasi Metode Hybrid: Menerapkan metode gabungan Analytical Hierarchy Process (AHP) untuk proses pembobotan kriteria secara sistematis dan objektif, serta metode Simple Additive Weighting (SAW) untuk melakukan proses perankingan alternatif laptop secara efisien dan akurat.  

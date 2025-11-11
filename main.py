@@ -3,6 +3,8 @@ import pandas as pd
 import numpy as np
 from sklearn.cluster import KMeans
 from sklearn.preprocessing import StandardScaler
+from app.data_utils import clean_laptops_df
+from app.clustering_utils import get_available_numeric_cols, run_kmeans
 import plotly.express as px
 import plotly.graph_objects as go
 
@@ -20,12 +22,12 @@ st.markdown("### Metode Hybrid: AHP + SAW dengan Machine Learning (K-Means)")
 # Sidebar navigation
 menu = st.sidebar.selectbox(
     "Menu Navigasi",
-    ["Home", "Upload Data Laptop","Clustering (K-Means)", "Pembobotan Kriteria (AHP)", 
+    ["Home", "Upload Data Laptop + Filtering","Clustering (K-Means)", "Pembobotan Kriteria (AHP)", 
      "Perankingan (SAW)", "Hasil Rekomendasi"]
 )
 
 # Global Var
-laptop_features = ['Harga', 'Prosesor_Score', 'RAM', 'Storage', 'GPU_Score', 'Baterai', 'Bobot']
+laptop_features = ['Inches', 'Ram (GB)', 'Memory (GB)', 'Prosesor_Score', 'GPU_Score', 'Memory_Value', 'Weight (KG)']
 weights = None
 
 
@@ -81,7 +83,7 @@ if menu == "Home":
     st.info("👈 Gunakan menu sidebar untuk mulai menggunakan sistem")
 
 # ============= INPUT DATA LAPTOP =============
-elif menu == "Upload Data Laptop":
+elif menu == "Upload Data Laptop + Filtering":
     st.subheader("Upload Data CSV")
     st.write("Format CSV: Company,TypeName,Inches,ScreenResolution,Cpu,Ram,Memory,Gpu,OpSys,Weight,Price")
     st.write("Contoh format data:")
@@ -121,13 +123,8 @@ elif menu == "Upload Data Laptop":
         if st.button("🗑️ Hapus Semua Data"):
             st.session_state.laptops_data = pd.DataFrame()
             st.rerun()
-
-# ============= K-MEANS CLUSTERING =============
-elif menu == "Clustering (K-Means)":
-    st.header("🔍 K-Means Clustering")
-
-    from app.data_utils import clean_laptops_df
-    from app.clustering_utils import get_available_numeric_cols, run_kmeans
+            
+    st.markdown("---")
 
     if st.session_state.laptops_data.empty:
         st.warning("⚠️ Belum ada data laptop. Silakan input data terlebih dahulu.")
@@ -146,8 +143,9 @@ elif menu == "Clustering (K-Means)":
         def _sync_selected_types():
             st.session_state.category['selected_types'] = st.session_state.get('selected_types', [])
 
-        st.multiselect("Pilih Company untuk Clustering", options=df_original['Company'].unique().tolist(), key='selected_companies', on_change=_sync_selected_companies)
-        st.multiselect("Pilih TypeName untuk Clustering", options=df_original['TypeName'].unique().tolist(), key='selected_types', on_change=_sync_selected_types)
+        st.write('## Filter Data Laptop')
+        st.multiselect("Pilih Company untuk Filtering", options=df_original['Company'].unique().tolist(), key='selected_companies', on_change=_sync_selected_companies)
+        st.multiselect("Pilih TypeName untuk Filtering", options=df_original['TypeName'].unique().tolist(), key='selected_types', on_change=_sync_selected_types)
 
         col1, col2 = st.columns(2, gap="small")
 
@@ -159,10 +157,10 @@ elif menu == "Clustering (K-Means)":
             st.session_state['selected_companies'] = []
             st.session_state['selected_types'] = []
 
+        st.container()
+        col1, col2 = st.columns(2, gap="small", width=260)
         col1.button("Select All", on_click=_select_all)
         col2.button("Clear All Filter", on_click=_clear_all)
-
-        st.divider()
 
         # determine effective selections (empty means all)
         sel_companies = st.session_state.get('selected_companies', [])
@@ -179,55 +177,77 @@ elif menu == "Clustering (K-Means)":
         if 'TypeName' in df_filtered.columns:
             df_filtered = df_filtered[df_filtered['TypeName'].isin(sel_types)]
 
-        # clean and prepare for numeric conversions
-        df = clean_laptops_df(df_filtered)
+        # clean and cache data
+        if 'cleaned_df' not in st.session_state:
+            st.session_state.cleaned_df = None
 
-        if df.empty:
-            st.warning("Tidak ada data yang cocok dengan filter yang diterapkan.")
-        else:
-            st.subheader("Filtered Data Laptop")
-            st.dataframe(df, use_container_width=True)
+        
+        if st.button("🧹 Bersihkan Data"):
+            df = clean_laptops_df(df_filtered)
+            st.session_state.cleaned_df = df
 
-            # features and clustering
-            numeric_cols = st.session_state.category.get('numeric_cols', laptop_features)
-            available_cols = get_available_numeric_cols(df, numeric_cols)
-            st.session_state.category['available_cols'] = available_cols
-
-            if len(available_cols) < 3:
-                st.error("Data tidak lengkap untuk clustering. Pastikan semua kolom tersedia.")
+        st.divider()
+        try:
+            if st.session_state.cleaned_df.empty:
+                st.warning("Tidak ada data yang cocok dengan filter yang diterapkan.")
             else:
-                n_clusters = st.slider("Jumlah Cluster", 2, 5, st.session_state.category.get('n_clusters', 3))
-                st.session_state.category['n_clusters'] = n_clusters
+                st.subheader("Filtered Data Laptop")
+                st.dataframe(df, use_container_width=True)
 
-                with st.expander("Kategori Cluster"):
-                    cluster_names = []
-                    for i in range(n_clusters):
-                        default_name = st.session_state.category.get('cluster_names', [f"Kategori {j+1}" for j in range(n_clusters)])[i] if st.session_state.category.get('cluster_names') and len(st.session_state.category.get('cluster_names'))>=n_clusters else f"Kategori {i+1}"
-                        name = st.text_input(f"Nama Cluster {i}", default_name, key=f"cluster_{i}")
-                        cluster_names.append(name)
-                    st.session_state.category['cluster_names'] = cluster_names
+        except Exception as e:
+            st.error(f"Tekan tombol ""'Bersihkan Data'"" untuk memulai pembersihan")
 
-                if st.button("Jalankan Clustering"):
-                    kmeans, clusters, _ = run_kmeans(df, available_cols, n_clusters)
-                    df['Cluster'] = clusters
-                    df['Kategori'] = [st.session_state.category['cluster_names'][c] for c in clusters]
-                    st.session_state.laptops_data = df
-                    st.session_state.clusters = kmeans
-                    st.success(f"✅ Clustering berhasil! Laptop dikelompokkan ke dalam {n_clusters} kategori.")
+# ============= K-MEANS CLUSTERING =============
+elif menu == "Clustering (K-Means)":
+    st.header("🔍 K-Means Clustering")
+    if st.session_state.laptops_data.empty:
+        st.warning("⚠️ Belum ada data laptop. Silakan input data terlebih dahulu.")
+    else:
+        numeric_cols = st.session_state.category.get('numeric_cols', laptop_features)
+        available_cols = get_available_numeric_cols(df, numeric_cols)
+        st.session_state.category['available_cols'] = available_cols
+        
+        st.write(f"Kolom numerik tersedia untuk clustering: {', '.join(available_cols)}")
+        st.write(df.info())
+        st.write(df.describe())
+        st.write(df.dtypes)
 
-                if 'Cluster' in df.columns:
-                    st.subheader("Visualisasi Cluster")
-                    fig = px.scatter_3d(df, x='Harga', y='RAM', z='Prosesor_Score', color='Kategori', hover_data=['Nama'], title='Visualisasi Clustering Laptop')
-                    st.plotly_chart(fig, use_container_width=True)
+        if len(available_cols) < 3:
+            st.error("Data tidak lengkap untuk clustering. Pastikan semua kolom tersedia.")
+        else:
+            n_clusters = st.slider("Jumlah Cluster", 2, 5, st.session_state.category.get('n_clusters', 3))
+            st.session_state.category['n_clusters'] = n_clusters
 
-                if 'Cluster' in df.columns:
-                    st.subheader("📊 Hasil Clustering")
-                    st.dataframe(df, use_container_width=True)
-                    st.subheader("📈 Statistik per Cluster")
-                    for i in range(n_clusters):
-                        with st.expander(f"{cluster_names[i]} - {len(df[df['Cluster']==i])} laptop"):
-                            cluster_data = df[df['Cluster']==i]
-                            st.write(cluster_data[['Nama', 'Harga', 'RAM (GB)', 'Memory (GB)']].describe())
+            with st.expander("Kategori Cluster"):
+                cluster_names = []
+                for i in range(n_clusters):
+                    default_name = st.session_state.category.get('cluster_names', [f"Kategori {j+1}" for j in range(n_clusters)])[i] if st.session_state.category.get('cluster_names') and len(st.session_state.category.get('cluster_names'))>=n_clusters else f"Kategori {i+1}"
+                    name = st.text_input(f"Nama Cluster {i}", default_name, key=f"cluster_{i}")
+                    cluster_names.append(name)
+                st.session_state.category['cluster_names'] = cluster_names
+
+            if st.button("Jalankan Clustering"):
+                kmeans, clusters, _ = run_kmeans(df, available_cols, n_clusters)
+                df['Cluster'] = clusters
+                df['Kategori'] = [st.session_state.category['cluster_names'][c] for c in clusters]
+                st.session_state.laptops_data = df
+                st.session_state.clusters = kmeans
+                st.success(f"✅ Clustering berhasil! Laptop dikelompokkan ke dalam {n_clusters} kategori.")
+
+            if 'Cluster' in df.columns:
+                st.subheader("Visualisasi Cluster")
+                fig = px.scatter_3d(df, x='Harga', y='RAM', z='Prosesor_Score', color='Kategori', hover_data=['Nama'], title='Visualisasi Clustering Laptop')
+                st.plotly_chart(fig, use_container_width=True)
+
+            if 'Cluster' in df.columns:
+                st.subheader("📊 Hasil Clustering")
+                st.dataframe(df, use_container_width=True)
+                st.subheader("📈 Statistik per Cluster")
+                for i in range(n_clusters):
+                    with st.expander(f"{cluster_names[i]} - {len(df[df['Cluster']==i])} laptop"):
+                        cluster_data = df[df['Cluster']==i]
+                        st.write(cluster_data[['Nama', 'Harga', 'RAM (GB)', 'Memory (GB)']].describe())
+
 
 # ============= AHP WEIGHTING =============
 elif menu == "Pembobotan Kriteria (AHP)":
