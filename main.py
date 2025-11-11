@@ -125,227 +125,109 @@ elif menu == "Upload Data Laptop":
 # ============= K-MEANS CLUSTERING =============
 elif menu == "Clustering (K-Means)":
     st.header("🔍 K-Means Clustering")
-    
+
+    from app.data_utils import clean_laptops_df
+    from app.clustering_utils import get_available_numeric_cols, run_kmeans
+
     if st.session_state.laptops_data.empty:
         st.warning("⚠️ Belum ada data laptop. Silakan input data terlebih dahulu.")
     else:
-        pd_original = st.session_state.laptops_data.copy()  # keep original data
-        pd = st.session_state.laptops_data.copy()
-        pd = pd.loc[:, ~pd.columns.str.startswith("Unnamed")]  # drop unnamed columns if any
-        
-        # initialize top-level keys so widgets are controlled; default EMPTY on first open
+        df_original = st.session_state.laptops_data.copy()
+
+        # Multiselect UI (controlled via top-level session_state keys)
         if 'selected_companies' not in st.session_state:
             st.session_state['selected_companies'] = []
         if 'selected_types' not in st.session_state:
             st.session_state['selected_types'] = []
 
-        # callbacks to sync nested category without trying to write the widget key
         def _sync_selected_companies():
             st.session_state.category['selected_companies'] = st.session_state.get('selected_companies', [])
 
         def _sync_selected_types():
             st.session_state.category['selected_types'] = st.session_state.get('selected_types', [])
 
-        # Do NOT assign the multiselect return directly into st.session_state (avoids modifying widget key)
-        st.multiselect(
-            "Pilih Company untuk Clustering",
-            options=pd['Company'].unique().tolist(),
-            key='selected_companies',
-            on_change=_sync_selected_companies
-        )
+        st.multiselect("Pilih Company untuk Clustering", options=df_original['Company'].unique().tolist(), key='selected_companies', on_change=_sync_selected_companies)
+        st.multiselect("Pilih TypeName untuk Clustering", options=df_original['TypeName'].unique().tolist(), key='selected_types', on_change=_sync_selected_types)
 
-        st.multiselect(
-            "Pilih TypeName untuk Clustering",
-            options=pd['TypeName'].unique().tolist(),
-            key='selected_types',
-            on_change=_sync_selected_types
-        )
+        col1, col2 = st.columns(2, gap="small")
 
-        # Select All and Clear Filter buttons placed side-by-side
-        col1, col2 = st.columns(2, gap="small", vertical_alignment="bottom", width=260)
-
-        # use on_click callbacks (safe to mutate widget keys here)
         def _select_all():
-            st.session_state['selected_companies'] = pd_original['Company'].unique().tolist()
-            st.session_state['selected_types'] = pd_original['TypeName'].unique().tolist()
-            st.session_state.category['selected_companies'] = st.session_state['selected_companies']
-            st.session_state.category['selected_types'] = st.session_state['selected_types']
+            st.session_state['selected_companies'] = df_original['Company'].unique().tolist()
+            st.session_state['selected_types'] = df_original['TypeName'].unique().tolist()
 
         def _clear_all():
             st.session_state['selected_companies'] = []
             st.session_state['selected_types'] = []
-            st.session_state.category['selected_companies'] = []
-            st.session_state.category['selected_types'] = []
 
-        col1.button("Select All", key="select_all", on_click=_select_all)
-        col2.button("Clear All Filter", key="clear_filter", on_click=_clear_all)
-
-        # Quick lil info
-        # REMEMBER TO DELETE IF DONE
-        pd.info()
-        pd.dtypes
+        col1.button("Select All", on_click=_select_all)
+        col2.button("Clear All Filter", on_click=_clear_all)
 
         st.divider()
-        
-        # Remove all empty data
-        pd = pd.dropna()
 
-        # Apply filters only for columns that exist to avoid empty/no-op filtering
-        if 'Company' in pd.columns and 'TypeName' in pd.columns:
-            pd = pd[
-                pd['Company'].isin(st.session_state.category.get('selected_companies', [])) &
-                pd['TypeName'].isin(st.session_state.category.get('selected_types', []))
-            ]
-        elif 'Company' in pd.columns:
-            pd = pd[pd['Company'].isin(st.session_state.category.get('selected_companies', []))]
-        elif 'TypeName' in pd.columns:
-            pd = pd[pd['TypeName'].isin(st.session_state.category.get('selected_types', []))]
-        
-        # Convert columns into possible float64
-        # Ram column
-        # TODO: Separate DDR4 and DDR5 if needed
-        pd['Ram'] = pd['Ram'].str.replace('GB', '').astype(float)
-        pd.rename(columns={'Ram': 'Ram (GB)'}, inplace=True)
-        
-        # Weight column (Only takes number)
-        pd['Weight'] = pd['Weight'].str.replace('kg', '').astype(float)
-        pd.rename(columns={'Weight': 'Weight (KG)'}, inplace=True)
+        # determine effective selections (empty means all)
+        sel_companies = st.session_state.get('selected_companies', [])
+        sel_types = st.session_state.get('selected_types', [])
+        if not sel_companies:
+            sel_companies = df_original['Company'].unique().tolist()
+        if not sel_types:
+            sel_types = df_original['TypeName'].unique().tolist()
 
-        # Memory column
-        # Add Memory value and divide 1 for SSD/Flash Drive and 0 for HDD
-        pd['Memory_Value'] = pd['Memory'].apply(lambda x: 1 if 'SSD' in x.upper() else 0)
-        # Moves Memory_Value column next to Memory column
-        if 'Memory' in pd.columns and 'Memory_Value' in pd.columns:
-            cols = list(pd.columns)
-            # ensure Memory_Value is removed then inserted immediately after Memory
-            cols.remove('Memory_Value')
-            mem_idx = cols.index('Memory')
-            cols.insert(mem_idx + 1, 'Memory_Value')
-            pd = pd[cols]
-        # Removes letters from Memory except '+'
-        for idx, val in pd['Memory'].items():
-            # If Numbers contain value 'TB', convert to GB by multiplying with 1024
-            if 'TB' in val.upper():
-                num_part = ''.join([c for c in val if c.isdigit() or c == '+'])
-                try:
-                    num_gb = float(num_part) * 1024
-                    pd.at[idx, 'Memory'] = str(int(num_gb))  # store as string without decimal
-                except:
-                    pass  # if conversion fails, skip
-            else:
-                clean_val = ''.join([c for c in val if c.isdigit() or c == '+'])
-                pd.at[idx, 'Memory'] = clean_val
-            
-            # Handle cases with multiple storages (e.g., "256GB SSD + 1TB HDD")
-            if '+' in val:
-                parts = val.split('+')
-                total_storage = 0
-                for part in parts:
-                    part = part.strip()
-                    if 'TB' in part.upper():
-                        num_part = ''.join([c for c in part if c.isdigit()])
-                        try:
-                            total_storage += float(num_part) * 1024
-                        except:
-                            pass
-                    else:
-                        num_part = ''.join([c for c in part if c.isdigit()])
-                        try:
-                            total_storage += float(num_part)
-                        except:
-                            pass
-                pd.at[idx, 'Memory'] = str(int(total_storage))  # store as string without decimal
+        # apply filters to a working copy
+        df_filtered = df_original.copy()
+        if 'Company' in df_filtered.columns:
+            df_filtered = df_filtered[df_filtered['Company'].isin(sel_companies)]
+        if 'TypeName' in df_filtered.columns:
+            df_filtered = df_filtered[df_filtered['TypeName'].isin(sel_types)]
 
-        # Convert and Change Name
-        pd['Memory'] = pd['Memory'].astype(float)
-        pd.rename(columns={'Memory': 'Memory (GB)'}, inplace=True)
+        # clean and prepare for numeric conversions
+        df = clean_laptops_df(df_filtered)
 
-        # Cpu Column
-        # One hot encode Cpu Brand (Only first Word)
-        pd = pd.join(pd['Cpu'].str.split(expand=True).iloc[:, 0].str.get_dummies())
-
-        # Show converted Data
-        if pd.empty:
+        if df.empty:
             st.warning("Tidak ada data yang cocok dengan filter yang diterapkan.")
         else:
             st.subheader("Filtered Data Laptop")
-            st.dataframe(pd, width='stretch')
-            pd.info()
-            pd.dtypes
+            st.dataframe(df, use_container_width=True)
 
-        # Select features for clustering (use global category in session_state)
-        numeric_cols = st.session_state.category.get('numeric_cols', ['Harga', 'Prosesor_Score', 'RAM', 'Storage', 'GPU_Score', 'Baterai', 'Bobot'])
-        available_cols = [col for col in numeric_cols if col in pd.columns]
-        # persist available cols
-        st.session_state.category['available_cols'] = available_cols
+            # features and clustering
+            numeric_cols = st.session_state.category.get('numeric_cols', laptop_features)
+            available_cols = get_available_numeric_cols(df, numeric_cols)
+            st.session_state.category['available_cols'] = available_cols
 
-        if len(available_cols) < 3:
-            st.error("Data tidak lengkap untuk clustering. Pastikan semua kolom tersedia.")
-        else:
-            n_clusters = st.slider("Jumlah Cluster", 2, 5, st.session_state.category.get('n_clusters', 3))
-            # persist selected n_clusters
-            st.session_state.category['n_clusters'] = n_clusters
-
-            col1, col2 = st.columns([1, 2])
-
-            with col1:
-                st.subheader("Kategori Cluster")
-                cluster_names = []
-                for i in range(n_clusters):
-                    default_name = st.session_state.category.get('cluster_names', [f"Kategori {j+1}" for j in range(n_clusters)])[i] if st.session_state.category.get('cluster_names') and len(st.session_state.category.get('cluster_names'))>=n_clusters else f"Kategori {i+1}"
-                    name = st.text_input(f"Nama Cluster {i}", default_name, key=f"cluster_{i}")
-                    cluster_names.append(name)
-                # persist cluster names
-                st.session_state.category['cluster_names'] = cluster_names
-
-            if st.button("Jalankan Clustering"):
-                # Prepare data
-                X = pd[available_cols].fillna(0)
-
-                # Standardize features
-                scaler = StandardScaler()
-                X_scaled = scaler.fit_transform(X)
-
-                # Apply K-Means
-                kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
-                clusters = kmeans.fit_predict(X_scaled)
-
-                # Add cluster labels to local df and persist back to session_state
-                pd['Cluster'] = clusters
-                pd['Kategori'] = [st.session_state.category['cluster_names'][c] for c in clusters]
-                st.session_state.laptops_data = pd
-                st.session_state.clusters = kmeans
-                # persist category state
+            if len(available_cols) < 3:
+                st.error("Data tidak lengkap untuk clustering. Pastikan semua kolom tersedia.")
+            else:
+                n_clusters = st.slider("Jumlah Cluster", 2, 5, st.session_state.category.get('n_clusters', 3))
                 st.session_state.category['n_clusters'] = n_clusters
-                st.session_state.category['available_cols'] = available_cols
 
-                st.success(f"✅ Clustering berhasil! Laptop dikelompokkan ke dalam {n_clusters} kategori.")
+                with st.expander("Kategori Cluster"):
+                    cluster_names = []
+                    for i in range(n_clusters):
+                        default_name = st.session_state.category.get('cluster_names', [f"Kategori {j+1}" for j in range(n_clusters)])[i] if st.session_state.category.get('cluster_names') and len(st.session_state.category.get('cluster_names'))>=n_clusters else f"Kategori {i+1}"
+                        name = st.text_input(f"Nama Cluster {i}", default_name, key=f"cluster_{i}")
+                        cluster_names.append(name)
+                    st.session_state.category['cluster_names'] = cluster_names
 
-            with col2:
-                if 'Cluster' in pd.columns:
+                if st.button("Jalankan Clustering"):
+                    kmeans, clusters, _ = run_kmeans(df, available_cols, n_clusters)
+                    df['Cluster'] = clusters
+                    df['Kategori'] = [st.session_state.category['cluster_names'][c] for c in clusters]
+                    st.session_state.laptops_data = df
+                    st.session_state.clusters = kmeans
+                    st.success(f"✅ Clustering berhasil! Laptop dikelompokkan ke dalam {n_clusters} kategori.")
+
+                if 'Cluster' in df.columns:
                     st.subheader("Visualisasi Cluster")
-
-                    # 3D scatter plot
-                    fig = px.scatter_3d(
-                        pd,
-                        x='Harga', y='RAM', z='Prosesor_Score',
-                        color='Kategori',
-                        hover_data=['Nama'],
-                        title='Visualisasi Clustering Laptop'
-                    )
+                    fig = px.scatter_3d(df, x='Harga', y='RAM', z='Prosesor_Score', color='Kategori', hover_data=['Nama'], title='Visualisasi Clustering Laptop')
                     st.plotly_chart(fig, use_container_width=True)
 
-            # Display clustered data
-            if 'Cluster' in pd.columns:
-                st.subheader("📊 Hasil Clustering")
-                st.dataframe(pd, use_container_width=True)
-
-                # Cluster statistics
-                st.subheader("📈 Statistik per Cluster")
-                for i in range(n_clusters):
-                    with st.expander(f"{cluster_names[i]} - {len(pd[pd['Cluster']==i])} laptop"):
-                        cluster_data = pd[pd['Cluster']==i]
-                        st.write(cluster_data[['Nama', 'Harga', 'RAM', 'Storage']].describe())
+                if 'Cluster' in df.columns:
+                    st.subheader("📊 Hasil Clustering")
+                    st.dataframe(df, use_container_width=True)
+                    st.subheader("📈 Statistik per Cluster")
+                    for i in range(n_clusters):
+                        with st.expander(f"{cluster_names[i]} - {len(df[df['Cluster']==i])} laptop"):
+                            cluster_data = df[df['Cluster']==i]
+                            st.write(cluster_data[['Nama', 'Harga', 'RAM (GB)', 'Memory (GB)']].describe())
 
 # ============= AHP WEIGHTING =============
 elif menu == "Pembobotan Kriteria (AHP)":
