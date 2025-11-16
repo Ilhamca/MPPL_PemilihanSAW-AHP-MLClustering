@@ -29,7 +29,8 @@ menu = st.sidebar.selectbox(
 # Global Var
 laptop_features = ['Inches', 'Ram (GB)', 'Memory (GB)', 'Prosesor_Score', 'GPU_Score', 'Memory_Value', 'Weight (KG)']
 weights = None
-
+filtered_company_data = None
+filtered_typename_data = None
 
 # Initialize session state
 if 'laptops_data' not in st.session_state:
@@ -143,11 +144,22 @@ elif menu == "Upload Data Laptop + Filtering":
         def _sync_selected_types():
             st.session_state.category['selected_types'] = st.session_state.get('selected_types', [])
 
+        # Filtering UI
         st.write('## Filter Data Laptop')
         st.multiselect("Pilih Company untuk Filtering", options=df_original['Company'].unique().tolist(), key='selected_companies', on_change=_sync_selected_companies)
         st.multiselect("Pilih TypeName untuk Filtering", options=df_original['TypeName'].unique().tolist(), key='selected_types', on_change=_sync_selected_types)
 
         col1, col2 = st.columns(2, gap="small")
+
+        if filtered_company_data is not None:
+            with col1:
+                st.write(f"**Data setelah filter Company ({len(filtered_company_data)} baris)**")
+                st.dataframe(filtered_company_data, use_container_width=True)
+
+        if filtered_typename_data is not None:
+            with col2:
+                st.write(f"**Data setelah filter TypeName ({len(filtered_typename_data)} baris)**")
+                st.dataframe(filtered_typename_data, use_container_width=True)
 
         def _select_all():
             st.session_state['selected_companies'] = df_original['Company'].unique().tolist()
@@ -183,70 +195,239 @@ elif menu == "Upload Data Laptop + Filtering":
 
         
         if st.button("🧹 Bersihkan Data"):
+            filtered_company_data = df_filtered[df_filtered['Company'].isin(sel_companies)]
+            filtered_typename_data = df_filtered[df_filtered['TypeName'].isin(sel_types)]
             df = clean_laptops_df(df_filtered)
             st.session_state.cleaned_df = df
 
         st.divider()
-        try:
-            if st.session_state.cleaned_df.empty:
-                st.warning("Tidak ada data yang cocok dengan filter yang diterapkan.")
-            else:
-                st.subheader("Filtered Data Laptop")
-                st.dataframe(df, use_container_width=True)
+        if df_filtered.empty:
+            try:
+                if st.session_state.cleaned_df.empty:
+                    st.warning("Tidak ada data yang cocok dengan filter yang diterapkan.")
+                else:
+                    st.subheader("Filtered Data Laptop")
+                    st.dataframe(df, use_container_width=True)
 
-        except Exception as e:
-            st.error(f"Tekan tombol ""'Bersihkan Data'"" untuk memulai pembersihan")
+            except Exception as e:
+                st.error(f"Tekan tombol ""'Bersihkan Data'"" untuk memulai pembersihan")
+        else:
+            st.subheader("Filtered Data Laptop")
+            st.dataframe(st.session_state.cleaned_df, use_container_width=True)
 
 # ============= K-MEANS CLUSTERING =============
 elif menu == "Clustering (K-Means)":
-    st.header("🔍 K-Means Clustering")
-    if st.session_state.laptops_data.empty:
-        st.warning("⚠️ Belum ada data laptop. Silakan input data terlebih dahulu.")
-    else:
-        numeric_cols = st.session_state.category.get('numeric_cols', laptop_features)
-        available_cols = get_available_numeric_cols(df, numeric_cols)
-        st.session_state.category['available_cols'] = available_cols
+    try:
+        st.header("🔍 K-Means Clustering")
+        st.dataframe(st.session_state.cleaned_df, use_container_width=True)
         
-        st.write(f"Kolom numerik tersedia untuk clustering: {', '.join(available_cols)}")
-        st.write(df.info())
-        st.write(df.describe())
-        st.write(df.dtypes)
-
-        if len(available_cols) < 3:
-            st.error("Data tidak lengkap untuk clustering. Pastikan semua kolom tersedia.")
+        if st.session_state.cleaned_df.empty:
+            st.warning("⚠️ Belum ada data laptop atau data belum di filter. Silakan input data dan filter terlebih dahulu.")
         else:
-            n_clusters = st.slider("Jumlah Cluster", 2, 5, st.session_state.category.get('n_clusters', 3))
-            st.session_state.category['n_clusters'] = n_clusters
+            df = st.session_state.cleaned_df.copy()
+            numeric_cols = st.session_state.category.get('numeric_cols', laptop_features)
+            available_cols = get_available_numeric_cols(df, numeric_cols)
+            st.session_state.category['available_cols'] = available_cols
+            
+            st.write(f"Kolom numerik tersedia untuk clustering: {', '.join(available_cols)}")
+            st.write(df.info())
+            st.write(df.describe())
+            st.write(df.dtypes)
 
-            with st.expander("Kategori Cluster"):
-                cluster_names = []
-                for i in range(n_clusters):
-                    default_name = st.session_state.category.get('cluster_names', [f"Kategori {j+1}" for j in range(n_clusters)])[i] if st.session_state.category.get('cluster_names') and len(st.session_state.category.get('cluster_names'))>=n_clusters else f"Kategori {i+1}"
-                    name = st.text_input(f"Nama Cluster {i}", default_name, key=f"cluster_{i}")
-                    cluster_names.append(name)
-                st.session_state.category['cluster_names'] = cluster_names
+            if len(available_cols) < 3:
+                st.error("Data tidak lengkap untuk clustering. Pastikan semua kolom tersedia.")
+            else:
+                st.info("💡 **K-Means Clustering** akan mengelompokkan laptop secara otomatis berdasarkan karakteristik yang relevan dengan kebutuhan mahasiswa.")
+                
+                # Predefined categories for student usage
+                st.subheader("🎯 Kategori Penggunaan Mahasiswa")
+                
+                usage_profiles = {
+                    "Budget Friendly": {
+                        "description": "Laptop terjangkau untuk penggunaan umum (browsing, office, streaming)",
+                        "icon": "💰",
+                        "features": ["Price", "Ram (GB)", "Memory (GB)"]
+                    },
+                    "Programming & Development": {
+                        "description": "Laptop untuk coding, compile, dan development software",
+                        "icon": "💻",
+                        "features": ["Prosesor_Score", "Ram (GB)", "Memory (GB)"]
+                    },
+                    "Desain Grafis & Multimedia": {
+                        "description": "Laptop untuk editing foto/video, 3D modeling, rendering",
+                        "icon": "🎨",
+                        "features": ["GPU_Score", "Prosesor_Score", "Ram (GB)", "Memory (GB)"]
+                    },
+                    "Gaming & High Performance": {
+                        "description": "Laptop untuk gaming, machine learning, dan aplikasi berat",
+                        "icon": "🎮",
+                        "features": ["GPU_Score", "Prosesor_Score", "Ram (GB)"]
+                    },
+                    "Portabilitas & Mobilitas": {
+                        "description": "Laptop ringan dan portable untuk mobilitas tinggi",
+                        "icon": "🎒",
+                        "features": ["Weight (KG)", "Ram (GB)", "Memory (GB)"]
+                    }
+                }
+                
+                # Number of clusters
+                n_clusters = st.slider(
+                    "Jumlah Kategori Laptop", 
+                    2, 5, 
+                    st.session_state.category.get('n_clusters', 3),
+                    help="Pilih berapa kategori laptop yang ingin dihasilkan dari clustering"
+                )
+                st.session_state.category['n_clusters'] = n_clusters
+                
+                # Display category profiles
+                cols = st.columns(min(3, n_clusters))
+                for idx, (profile_name, profile_data) in enumerate(list(usage_profiles.items())[:n_clusters]):
+                    with cols[idx % 3]:
+                        st.markdown(f"""
+                        **{profile_data['icon']} {profile_name}**  
+                        {profile_data['description']}
+                        """)
+                
+                with st.expander("⚙️ Konfigurasi Clustering", expanded=False):
+                    st.write("**Kriteria yang Digunakan untuk Clustering:**")
+                    
+                    # Allow users to select which features to prioritize
+                    selected_features = st.multiselect(
+                        "Pilih fitur untuk clustering",
+                        options=available_cols,
+                        default=available_cols,
+                        help="Fitur yang dipilih akan digunakan untuk mengelompokkan laptop"
+                    )
+                    
+                    if not selected_features:
+                        st.warning("⚠️ Pilih minimal satu fitur untuk clustering!")
+                        selected_features = available_cols
+                    
+                    # Custom naming
+                    st.write("**Penamaan Kategori:**")
+                    cluster_names = []
+                    default_names = list(usage_profiles.keys())[:n_clusters]
+                    
+                    for i in range(n_clusters):
+                        default_name = default_names[i] if i < len(default_names) else f"Kategori {i+1}"
+                        if st.session_state.category.get('cluster_names') and len(st.session_state.category.get('cluster_names')) >= n_clusters:
+                            default_name = st.session_state.category.get('cluster_names')[i]
+                        
+                        name = st.text_input(
+                            f"Nama Kategori {i+1}", 
+                            default_name, 
+                            key=f"cluster_{i}",
+                            help=f"Beri nama untuk kategori laptop yang akan dihasilkan"
+                        )
+                        cluster_names.append(name)
+                    
+                    st.session_state.category['cluster_names'] = cluster_names
 
-            if st.button("Jalankan Clustering"):
-                kmeans, clusters, _ = run_kmeans(df, available_cols, n_clusters)
-                df['Cluster'] = clusters
-                df['Kategori'] = [st.session_state.category['cluster_names'][c] for c in clusters]
-                st.session_state.laptops_data = df
-                st.session_state.clusters = kmeans
-                st.success(f"✅ Clustering berhasil! Laptop dikelompokkan ke dalam {n_clusters} kategori.")
+                if st.button("🚀 Jalankan Analisis Clustering", type="primary"):
+                    with st.spinner("Menganalisis data dan mengelompokkan laptop..."):
+                        # Run K-Means clustering
+                        kmeans, clusters, X_scaled = run_kmeans(df, selected_features, n_clusters)
+                        
+                        # Add cluster results to dataframe
+                        df['Cluster'] = clusters
+                        df['Kategori'] = [st.session_state.category['cluster_names'][c] for c in clusters]
+                        
+                        # Pastikan kolom 'No' tetap ada
+                        if 'No' not in df.columns:
+                            df.insert(0, 'No', range(1, len(df) + 1))
+                        
+                        # Calculate cluster centers for interpretation
+                        cluster_centers = kmeans.cluster_centers_
+                        
+                        # Store results
+                        st.session_state.laptops_data = df
+                        st.session_state.clusters = kmeans
+                        st.session_state.cluster_centers = cluster_centers
+                        st.session_state.selected_features = selected_features
+                        
+                        st.success(f"✅ Clustering berhasil! Laptop telah dikelompokkan ke dalam {n_clusters} kategori berdasarkan kebutuhan mahasiswa.")
 
-            if 'Cluster' in df.columns:
-                st.subheader("Visualisasi Cluster")
-                fig = px.scatter_3d(df, x='Harga', y='RAM', z='Prosesor_Score', color='Kategori', hover_data=['Nama'], title='Visualisasi Clustering Laptop')
-                st.plotly_chart(fig, use_container_width=True)
+                # Display results if clustering has been performed
+                if 'Cluster' in df.columns:
+                    st.divider()
+                    
+                    # Cluster distribution
+                    col1, col2 = st.columns([1, 2])
+                    
+                    with col1:
+                        st.subheader("📊 Distribusi Kategori")
+                        cluster_counts = df['Kategori'].value_counts()
+                        fig_pie = px.pie(
+                            values=cluster_counts.values,
+                            names=cluster_counts.index,
+                            title="Proporsi Laptop per Kategori"
+                        )
+                        st.plotly_chart(fig_pie, use_container_width=True)
+                    
+                    with col2:
+                        st.subheader("📈 Jumlah Laptop per Kategori")
+                        fig_bar = px.bar(
+                            x=cluster_counts.index,
+                            y=cluster_counts.values,
+                            labels={'x': 'Kategori', 'y': 'Jumlah Laptop'},
+                            title="Distribusi Laptop",
+                            color=cluster_counts.index
+                        )
+                        st.plotly_chart(fig_bar, use_container_width=True)
+                    
+                    # 3D Visualization
+                    st.subheader("🎯 Visualisasi Clustering 3D")
+                    
+                    # Select axes for visualization
+                    viz_col1, viz_col2, viz_col3 = st.columns(3)
+                    with viz_col1:
+                        x_axis = st.selectbox("Sumbu X", options=available_cols, index=0 if 'Price' not in available_cols else available_cols.index('Price'))
+                    with viz_col2:
+                        y_axis = st.selectbox("Sumbu Y", options=available_cols, index=1 if len(available_cols) > 1 else 0)
+                    with viz_col3:
+                        z_axis = st.selectbox("Sumbu Z", options=available_cols, index=2 if len(available_cols) > 2 else 0)
+                    
+                    fig_3d = px.scatter_3d(
+                        df,
+                        x=x_axis, 
+                        y=y_axis, 
+                        z=z_axis,
+                        color='Kategori',
+                        hover_data=['Company', 'No'],
+                        title=f'Clustering Laptop: {x_axis} vs {y_axis} vs {z_axis}'
+                    )
+                    st.plotly_chart(fig_3d, use_container_width=True)
+                    
+                    # Detailed results per cluster
+                    st.subheader("📋 Detail Kategori Laptop")
+                    for i in range(n_clusters):
+                        cluster_data = df[df['Cluster'] == i]
+                        category_name = st.session_state.category['cluster_names'][i]
+                        
+                        with st.expander(f"**{category_name}** - {len(cluster_data)} laptop"):
+                            # Summary statistics
+                            st.write("**Karakteristik Rata-rata:**")
+                            summary_cols = ['Price', 'Ram (GB)', 'Memory (GB)', 'Prosesor_Score', 'GPU_Score', 'Weight (KG)']
+                            available_summary = [col for col in summary_cols if col in cluster_data.columns]
+                            
+                            if available_summary:
+                                summary_df = cluster_data[available_summary].describe().loc[['mean', 'min', 'max']].T
+                                summary_df.columns = ['Rata-rata', 'Minimum', 'Maximum']
+                                st.dataframe(summary_df, use_container_width=True)
+                            
+                            # Sample laptops in this cluster
+                            st.write("**Sample Laptop dalam Kategori:**")
+                            display_cols = ['Company', 'TypeName', 'Price', 'Ram (GB)', 'Memory (GB)', 'Prosesor_Score']
+                            available_display = [col for col in display_cols if col in cluster_data.columns]
+                            st.dataframe(cluster_data[available_display].head(5), use_container_width=True)
+                    
+                    # Full clustered data
+                    st.subheader("🗂️ Data Lengkap dengan Kategori")
+                    st.dataframe(df, use_container_width=True)
+            
+    except Exception as e:
+        st.warning(f"Mohon untuk fileter dan bersihkan data terlebih dahulu sebelum melakukan clustering.")
 
-            if 'Cluster' in df.columns:
-                st.subheader("📊 Hasil Clustering")
-                st.dataframe(df, use_container_width=True)
-                st.subheader("📈 Statistik per Cluster")
-                for i in range(n_clusters):
-                    with st.expander(f"{cluster_names[i]} - {len(df[df['Cluster']==i])} laptop"):
-                        cluster_data = df[df['Cluster']==i]
-                        st.write(cluster_data[['Nama', 'Harga', 'RAM (GB)', 'Memory (GB)']].describe())
 
 
 # ============= AHP WEIGHTING =============
@@ -382,6 +563,15 @@ elif menu == "Perankingan (SAW)":
             # Filter data based on preferences
             filtered_data = st.session_state.laptops_data.copy()
             
+            # Pastikan kolom 'No' ada di posisi pertama untuk tracking
+            if 'No' not in filtered_data.columns:
+                if 'No' in st.session_state.cleaned_df.columns:
+                    # Copy kolom 'No' dari cleaned_df
+                    filtered_data.insert(0, 'No', st.session_state.cleaned_df['No'].values[:len(filtered_data)])
+                else:
+                    # Buat kolom No baru
+                    filtered_data.insert(0, 'No', range(1, len(filtered_data) + 1))
+            
             if 'Harga' in filtered_data.columns:
                 filtered_data = filtered_data[filtered_data['Harga'] <= max_budget]
             if 'RAM' in filtered_data.columns:
@@ -423,8 +613,12 @@ elif menu == "Perankingan (SAW)":
                             saw_score += weight * norm_values
                 
                 filtered_data['SAW_Score'] = saw_score
+                
+                # Sorting berdasarkan SAW_Score (descending)
                 filtered_data = filtered_data.sort_values('SAW_Score', ascending=False).reset_index(drop=True)
-                filtered_data['Peringkat'] = range(1, len(filtered_data) + 1)
+                
+                # Tambahkan kolom Peringkat di posisi pertama
+                filtered_data.insert(0, 'Peringkat', range(1, len(filtered_data) + 1))
                 
                 st.session_state.saw_results = filtered_data
                 
@@ -434,7 +628,11 @@ elif menu == "Perankingan (SAW)":
         if st.session_state.saw_results is not None:
             st.subheader("🏆 Hasil Perankingan")
             
-            display_cols = ['Peringkat', 'Nama', 'Harga', 'RAM', 'Storage', 'SAW_Score']
+            # Info box
+            if 'No' in st.session_state.saw_results.columns:
+                st.info("💡 **Kolom 'No'** menunjukkan nomor urut laptop dalam dataset asli untuk memudahkan pelacakan.")
+            
+            display_cols = ['Peringkat', 'No', 'Company', 'TypeName', 'Price', 'Ram (GB)', 'Memory (GB)', 'Prosesor_Score', 'GPU_Score', 'SAW_Score']
             if 'Kategori' in st.session_state.saw_results.columns:
                 display_cols.insert(2, 'Kategori')
             
@@ -442,10 +640,13 @@ elif menu == "Perankingan (SAW)":
             st.dataframe(st.session_state.saw_results[available_display_cols], use_container_width=True)
             
             # Visualization
-            fig = px.bar(st.session_state.saw_results.head(10), 
-                        x='Nama', y='SAW_Score',
+            top_10 = st.session_state.saw_results.head(10).copy()
+            top_10['Label'] = top_10['No'].astype(str) if 'No' in top_10.columns else top_10['Peringkat'].astype(str)
+            
+            fig = px.bar(top_10, 
+                        x='Label', y='SAW_Score',
                         title='Top 10 Laptop Berdasarkan Skor SAW',
-                        labels={'SAW_Score': 'Skor SAW', 'Nama': 'Nama Laptop'},
+                        labels={'SAW_Score': 'Skor SAW', 'Label': 'No. Laptop'},
                         color='SAW_Score',
                         color_continuous_scale='Viridis')
             fig.update_layout(xaxis_tickangle=-45)
@@ -463,30 +664,41 @@ elif menu == "Hasil Rekomendasi":
         top_5 = st.session_state.saw_results.head(5)
         
         for idx, row in top_5.iterrows():
-            with st.expander(f"#{int(row['Peringkat'])} - {row['Nama']} (Skor: {row['SAW_Score']:.4f})"):
+            laptop_title = f"#{int(row['Peringkat'])} - {row['Company']} {row['TypeName']}"
+            if 'No' in row:
+                laptop_title += f" (Laptop No. {int(row['No'])})"
+            laptop_title += f" | Skor: {row['SAW_Score']:.4f}"
+            
+            with st.expander(laptop_title):
                 col1, col2 = st.columns(2)
                 
                 with col1:
-                    st.write("**Spesifikasi:**")
-                    if 'Harga' in row:
-                        st.write(f"💰 Harga: Rp {row['Harga']:.1f} Juta")
-                    if 'Prosesor' in row:
-                        st.write(f"⚡ Prosesor: {row['Prosesor']}")
-                    if 'RAM' in row:
-                        st.write(f"🧠 RAM: {row['RAM']} GB")
-                    if 'Storage' in row:
-                        st.write(f"💾 Storage: {row['Storage']} GB")
+                    st.write("**Identifikasi:**")
+                    if 'No' in row:
+                        st.write(f"🔢 No. Laptop: {int(row['No'])}")
+                    if 'Company' in row:
+                        st.write(f"🏢 Brand: {row['Company']}")
+                    if 'TypeName' in row:
+                        st.write(f"📱 Tipe: {row['TypeName']}")
+                    
+                    st.write("\n**Spesifikasi:**")
+                    if 'Price' in row:
+                        st.write(f"💰 Harga: €{row['Price']:.2f}")
+                    if 'Ram (GB)' in row:
+                        st.write(f"🧠 RAM: {int(row['Ram (GB)'])} GB")
+                    if 'Memory (GB)' in row:
+                        st.write(f"💾 Storage: {int(row['Memory (GB)'])} GB")
                 
                 with col2:
-                    st.write("**Detail Tambahan:**")
-                    if 'GPU' in row:
-                        st.write(f"🎨 GPU: {row['GPU']}")
-                    if 'Baterai' in row:
-                        st.write(f"🔋 Baterai: {row['Baterai']} Wh")
-                    if 'Bobot' in row:
-                        st.write(f"⚖️ Bobot: {row['Bobot']} kg")
+                    st.write("**Performa:**")
+                    if 'Prosesor_Score' in row:
+                        st.write(f"⚡ CPU Score: {int(row['Prosesor_Score'])}")
+                    if 'GPU_Score' in row:
+                        st.write(f"🎨 GPU Score: {int(row['GPU_Score'])}")
+                    if 'Weight (KG)' in row:
+                        st.write(f"⚖️ Berat: {row['Weight (KG)']:.2f} kg")
                     if 'Kategori' in row:
-                        st.write(f"📁 Kategori: {row['Kategori']}")
+                        st.write(f"\n📁 Kategori: **{row['Kategori']}**")
         
         # Comparison chart
         st.subheader("📊 Perbandingan Visual")
@@ -500,11 +712,18 @@ elif menu == "Hasil Rekomendasi":
                 
                 for idx, row in top_5.iterrows():
                     values = [row[col] for col in available_criteria if col in row]
+                    # Buat label yang informatif
+                    label = f"#{int(row['Peringkat'])}"
+                    if 'No' in row:
+                        label += f" - No.{int(row['No'])}"
+                    if 'Company' in row:
+                        label += f" {row['Company']}"
+                    
                     fig.add_trace(go.Scatterpolar(
                         r=values,
                         theta=available_criteria,
                         fill='toself',
-                        name=row['Nama']
+                        name=label
                     ))
                 
                 fig.update_layout(

@@ -203,6 +203,10 @@ def clean_laptops_df(df: pd.DataFrame) -> pd.DataFrame:
     # Remove fully empty rows
     df = df.dropna(how='all')
 
+    # Adds numbering index if not present
+    if 'No' not in df.columns:
+        df.insert(0, 'No', range(1, len(df) + 1))
+
     # RAM -> numeric
     if 'Ram' in df.columns:
         # keep original if missing
