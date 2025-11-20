@@ -15,10 +15,6 @@ st.set_page_config(
     layout="wide"
 )
 
-# Title and description
-st.title("🎓 Sistem Pendukung Keputusan Pemilihan Laptop Mahasiswa")
-st.markdown("### Metode Hybrid: AHP + SAW dengan Machine Learning (K-Means)")
-
 # Sidebar navigation
 menu = st.sidebar.selectbox(
     "Menu Navigasi",
@@ -52,36 +48,78 @@ if 'category' not in st.session_state:
 
 # ============= HOME PAGE =============
 if menu == "Home":
-    st.header("Selamat Datang! 👋")
+    # Title and description
+    st.html("<h1 style='color:white;text-align:center;'>🎓 Sistem Pendukung Keputusan Pemilihan Laptop Mahasiswa</h1><h3 style='text-align:center;'>Pencarian Efektif Menggunakan AHP + SAW dengan Machine Learning (K-Means)</h3><hr>")
     
-    col1, col2 = st.columns(2)
     
-    with col1:
-        st.subheader("📋 Tentang Sistem")
-        st.write("""
-        Sistem ini membantu mahasiswa dalam memilih laptop yang sesuai dengan kebutuhan mereka
-        menggunakan metode ilmiah dan machine learning.
+    
+    uploaded_file = st.file_uploader(label="", type=['csv'], help="Unggah file CSV berisi data laptop dengan format yang sesuai.", key="home_file_uploader")
+   
+    if uploaded_file is not None:
+        try:
+            st.session_state.laptops_data = pd.read_csv(uploaded_file)
+            st.success(f"✅ Berhasil memuat {len(st.session_state.laptops_data)} data laptop!")
+        except Exception as e:
+            st.error(f"Error: {e}")   
+    else:
+        # Clean all previous data
+        try:
+            st.session_state.laptops_data = pd.DataFrame()
+        except Exception as e:
+            st.error(f"Error: {e}")   
+    
+    if st.session_state.laptops_data.empty:
+        st.html("<p style='text-align:center;'>Upload file CSV untuk memulai</p>")
+    else:
+        tab1, tab2 = st.tabs(["Pemilihan Colom", "Filtering Data"])
+        with tab1:
+            # Categorize for each column
+            # This is to ensure many columns are properly categorized for data to be analyzed correctly
+            st.markdown("Pilih kolom yang akan digunakan untuk analisis lebih lanjut.")
+            st.html("<h1>Data untuk diukur (Minimal 3)</h1>")
+            columnOption = ["None"] + st.session_state.laptops_data.columns.tolist()
+            Inches, ResolusiLayar, CPU, RAM = st.columns(4)
+            with Inches:
+                inchesCol = st.selectbox("Pilih kolom Inches", options=columnOption)
+            with ResolusiLayar:
+                screenResolutionCol = st.selectbox("Pilih kolom Resolusi Layar", options=columnOption)
+            with CPU:
+                cpuCol = st.selectbox("Pilih kolom CPU", options=columnOption)
+            with RAM:
+                ramCol = st.selectbox("Pilih kolom RAM", options=columnOption)
+            
+            Memory, GPU, Weight, Price = st.columns(4)
+            with Memory:
+                memoryCol = st.selectbox("Pilih kolom Memory", options=columnOption)
+            with GPU:
+                gpuCol = st.selectbox("Pilih kolom GPU", options=columnOption)
+            with Weight:
+                weightCol = st.selectbox("Pilih kolom Weight", options=columnOption)
+            with Price:
+                priceCol = st.selectbox("Pilih kolom Price", options=columnOption)
+            
+            st.html("<h1>Filtering (Optional)</h1>")
+            Name, Company, Laptop_Type, Operating_System = st.columns(4)
+            with Name:
+                nameCol = st.selectbox("Pilih kolom Name", options=columnOption)
+            with Company:
+                companyCol = st.selectbox("Pilih kolom Company", options=columnOption)
+            with Laptop_Type:
+                laptopTypeCol = st.selectbox("Pilih kolom Laptop Type", options=columnOption)
+            with Operating_System:
+                operatingSystemCol = st.selectbox("Pilih kolom Operating System", options=columnOption)
+                
+            st.info("Apabila nama tidak dipilih, penamaan akan otomatis dilakukan menggunakan angka.", icon="ℹ️", width=650)
+
+            all_columns = st.session_state.laptops_data.columns.tolist()
         
-        **Metode yang Digunakan:**
-        - **K-Means Clustering**: Pengelompokan laptop berdasarkan karakteristik
-        - **AHP (Analytical Hierarchy Process)**: Pembobotan kriteria
-        - **SAW (Simple Additive Weighting)**: Perankingan alternatif
-        """)
+        st.markdown("<hr><h1>Data Laptop Saat Ini</h1>", unsafe_allow_html=True)
+        st.dataframe(st.session_state.laptops_data, use_container_width=True)
+            
     
-    with col2:
-        st.subheader("🎯 Kriteria Pemilihan")
-        st.write("""
-        Kriteria yang dipertimbangkan:
-        - 💰 **Harga**: Budget mahasiswa
-        - ⚡ **Prosesor**: Performa CPU
-        - 🧠 **RAM**: Memori sistem
-        - 💾 **Storage**: Kapasitas penyimpanan
-        - 🎨 **GPU**: Kemampuan grafis
-        - 🔋 **Baterai**: Daya tahan
-        - ⚖️ **Bobot**: Portabilitas
-        """)
+
     
-    st.info("👈 Gunakan menu sidebar untuk mulai menggunakan sistem")
+
 
 # ============= INPUT DATA LAPTOP =============
 elif menu == "Upload Data Laptop + Filtering":
@@ -107,19 +145,10 @@ elif menu == "Upload Data Laptop + Filtering":
     Catatan:
     - Semua RAM Asumsi dalam generasi yang sama
     """)
-
-    uploaded_file = st.file_uploader("Pilih file CSV", type=['csv'])
-    if uploaded_file is not None:
-        try:
-            st.session_state.laptops_data = pd.read_csv(uploaded_file)
-            st.success(f"✅ Berhasil memuat {len(st.session_state.laptops_data)} data laptop!")
-        except Exception as e:
-            st.error(f"Error: {e}")
     
     # Display current data
     if not st.session_state.laptops_data.empty:
         st.subheader("📊 Data Laptop Saat Ini")
-        st.dataframe(st.session_state.laptops_data, use_container_width=True)
         
         if st.button("🗑️ Hapus Semua Data"):
             st.session_state.laptops_data = pd.DataFrame()
