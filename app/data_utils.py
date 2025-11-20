@@ -369,4 +369,5 @@ def clean_laptops_df(df: pd.DataFrame) -> pd.DataFrame:
             import traceback
             print(f"GPU mapping error: {e}")
             traceback.print_exc()
+
     return df
