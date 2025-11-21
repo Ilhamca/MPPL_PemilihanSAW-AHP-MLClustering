@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np
 from sklearn.cluster import KMeans
 from sklearn.preprocessing import StandardScaler
-from app.data_utils import clean_laptops_df
+import app.data_utils as data_utils
 from app.clustering_utils import get_available_numeric_cols, run_kmeans
 import plotly.express as px
 import plotly.graph_objects as go
@@ -23,18 +23,19 @@ menu = st.sidebar.selectbox(
 )
 
 # Global Var
-laptop_features = ['Inches', 'Ram (GB)', 'Memory (GB)', 'Prosesor_Score', 'GPU_Score', 'Memory_Value', 'Weight (KG)']
-weights = None
+laptop_features = ['Inches', 'Ram (GB)', 'Memory (GB)', 'Prosesor_Score', 'GPU_Score', 'Memory_Value', 'berat (KG)']
+berat = None
 uploaded_file = None
 filtered_company_data = None
 filtered_typename_data = None
 filtered_os_data = None
+df_filtered_result = pd.DataFrame()
 
 # Initialize session state
 if 'laptops_data' not in st.session_state:
     st.session_state.laptops_data = pd.DataFrame()
-if 'ahp_weights' not in st.session_state:
-    st.session_state.ahp_weights = {}
+if 'ahp_berat' not in st.session_state:
+    st.session_state.ahp_berat = {}
 if 'clusters' not in st.session_state:
     st.session_state.clusters = None
 if 'saw_results' not in st.session_state:
@@ -48,7 +49,8 @@ if 'category' not in st.session_state:
         'available_cols': []
     }
 
-st.session_state.laptop_categorized_data = pd.DataFrame()
+contoh = pd.DataFrame(columns=["ID", "Nama", "Merek", "Tipe Laptop", "Sistem Operasi", "Ukuran (Inches)", "Resolusi Layar", "CPU", "RAM", "Memory", "GPU", "Berat (KG)", "Harga"])
+st.session_state.laptop_categorized_data = contoh
 
 # Title and description
 st.html("<h1 style='color:white;text-align:center;'>🎓 Sistem Pendukung Keputusan Pemilihan Laptop Mahasiswa</h1><h3 style='text-align:center;'>Pencarian Efektif Menggunakan AHP + SAW dengan Machine Learning (K-Means)</h3><hr>")
@@ -70,168 +72,146 @@ if menu == "Upload dan Filter":
     if st.session_state.laptops_data.empty:
         st.html("<p style='text-align:center;'>Upload file CSV untuk mulai</p>")
     else:
-        tab1, tab2 = st.tabs(["Pemilihan Kolom", "Kategori Data"])
-        with tab1:
-            # Categorize for each column
-            # This is to ensure many columns are properly categorized for data to be analyzed correctly
+        # Choose mapping mode
+        mode = st.radio("Mode Pemetaan Kolom", ["Otomatis", "Manual"], index=0, horizontal=True)
+
+        if mode == "Otomatis":
+            st.markdown("Otomatisasi pemetaan kolom berdasarkan nama kolom umum. Direkomendasikan jika kolom sudah sesuai format.")
+        else:
             st.markdown("Pilih kolom yang akan digunakan untuk analisis lebih lanjut.")
-            st.html("<h1>Data untuk diukur (Minimal 3)</h1>")
-            columnOption = ["None"] + st.session_state.laptops_data.columns.tolist()
-            
-            # Menyimpan pilihan sebelumnnya dalam pemilihan kolom
-            all_select_keys = [
-            "inchesColSelection", "screenResolutionColSelection", "cpuColSelection", "ramColSelection",
-            "memoryColSelection", "gpuColSelection", "weightColSelection", "priceColSelection",
-            "idColSelection", "nameColSelection", "companyColSelection", "laptopTypeColSelection", "operatingSystemColSelection"
-            ]        
-            # Inisialisasi "Shadow State" (Penyimpanan Permanen) jika belum ada
-            for key in all_select_keys:
-                shadow_key = f"shadow_{key}"
-                if shadow_key not in st.session_state:
-                    st.session_state[shadow_key] = "None" # Default ke "None"
-            
-            def update_selection(key):
-                shadow_key = f"shadow_{key}"
-                st.session_state[shadow_key] = st.session_state[key]
-            
-            def get_index(key, options):
-                shadow_key = f"shadow_{key}"
-                # Ambil nilai terakhir yang disimpan (atau "None" jika belum ada)
-                saved_val = st.session_state.get(shadow_key, "None")
+            st.html("<h4>Data untuk diukur (Minimal 3)</h4>")
+
+            column_options = ["None"] + st.session_state.laptops_data.columns.tolist()
+
+            # Define manual selection fields (label -> session key)
+            manual_fields = {
+            "Pilih kolom Ukuran (Inches)": "inchesColSelection",
+            "Pilih kolom Resolusi Layar": "screenResolutionColSelection",
+            "Pilih kolom CPU": "cpuColSelection",
+            "Pilih kolom GPU": "gpuColSelection",
+            "Pilih kolom Memory": "memoryColSelection",
+            "Pilih kolom RAM": "ramColSelection",
+            "Pilih kolom berat": "beratColSelection",
+            "Pilih kolom harga": "hargaColSelection",
+            "Pilih kolom ID": "idColSelection",
+            "Pilih kolom Nama": "nameColSelection",
+            "Pilih kolom Company": "companyColSelection",
+            "Pilih kolom Laptop Type": "laptopTypeColSelection",
+            "Pilih kolom Operating System": "operatingSystemColSelection"
+            }
+
+            # Initialize shadow keys and helper to get saved index
+            for key in manual_fields.values():
+                shadow = f"shadow_{key}"
+                if shadow not in st.session_state:
+                    st.session_state[shadow] = "None"
+
+            def saved_index(key):
+                shadow = f"shadow_{key}"
+                saved = st.session_state.get(shadow, "None")
                 try:
-                    return options.index(saved_val)
+                    return column_options.index(saved)
                 except ValueError:
-                    return 0 # Jika nilai lama tidak ada di opsi baru (misal ganti file), reset ke 0
-            
-            # Baris 1
-            Inches, ResolusiLayar, CPU, RAM = st.columns(4)
-            with Inches:
-                key = "inchesColSelection"
-                inchesCol = st.selectbox("Pilih kolom Inches", options=columnOption, key=key, on_change=update_selection, index=get_index(key, columnOption), args=(key, ))
-            with ResolusiLayar:
-                key = "screenResolutionColSelection"
-                screenResolutionCol = st.selectbox("Pilih kolom Resolusi Layar", options=columnOption, key=key, on_change=update_selection, index=get_index(key, columnOption), args=(key, ))
-            with CPU:
-                key = "cpuColSelection"
-                cpuCol = st.selectbox("Pilih kolom CPU", options=columnOption, key=key, on_change=update_selection, index=get_index(key, columnOption), args=(key, ))
-            with RAM:
-                key = "ramColSelection"
-                ramCol = st.selectbox("Pilih kolom RAM", options=columnOption, key=key, on_change=update_selection, index=get_index(key, columnOption), args=(key, ))
-            
-            #Baris 2
-            Memory, GPU, Weight, Price = st.columns(4)
-            with Memory:
-                key = "memoryColSelection"
-                memoryCol = st.selectbox("Pilih kolom Memory", options=columnOption, key=key, on_change=update_selection, index=get_index(key, columnOption), args=(key, ))
-            with GPU:
-                key = "gpuColSelection"
-                gpuCol = st.selectbox("Pilih kolom GPU", options=columnOption, key=key, on_change=update_selection, index=get_index(key, columnOption), args=(key, ))
-            with Weight:
-                key = "weightColSelection"
-                weightCol = st.selectbox("Pilih kolom Weight", options=columnOption, key=key, on_change=update_selection, index=get_index(key, columnOption), args=(key, ))
-            with Price:
-                key = "priceColSelection"
-                priceCol = st.selectbox("Pilih kolom Price", options=columnOption, key=key, on_change=update_selection, index=get_index(key, columnOption), args=(key, ))
-            
-            st.html("<h1>Filtering (Optional)</h1>")
-            Id, Name, Company, Laptop_Type, Operating_System = st.columns(5)
-            with Id:
-                key = "idColSelection"
-                idCol = st.selectbox("Pilih kolom ID", options=columnOption, key=key, on_change=update_selection, index=get_index(key, columnOption), args=(key, ))
-            with Name:
-                key = "nameColSelection"
-                nameCol = st.selectbox("Pilih kolom Name", options=columnOption, key=key, on_change=update_selection, index=get_index(key, columnOption), args=(key, ))
-            with Company:
-                key = "companyColSelection"
-                companyCol = st.selectbox("Pilih kolom Company", options=columnOption, key=key, on_change=update_selection, index=get_index(key, columnOption), args=(key, ))
-            with Laptop_Type:
-                key = "laptopTypeColSelection"
-                laptopTypeCol = st.selectbox("Pilih kolom Laptop Type", options=columnOption, key=key, on_change=update_selection, index=get_index(key, columnOption), args=(key, ))
-            with Operating_System:
-                key = "operatingSystemColSelection"
-                operatingSystemCol = st.selectbox("Pilih kolom Operating System", options=columnOption, key=key, on_change=update_selection, index=get_index(key, columnOption), args=(key, ))
-                
-            st.info("Apabila ID tidak dipilih, ID akan otomatis diinputkan.", icon="ℹ️", width=650)
+                    return 0
 
-            all_columns = st.session_state.laptops_data.columns.tolist()
-        
-        with tab2:
-            df_original = st.session_state.laptops_data.copy()
+            # Render selectboxes in rows of up to 4 per row
+            items = list(manual_fields.items())
+            for i in range(0, len(items), 4):
+                cols = st.columns(min(4, len(items) - i))
+                for col, (label, skey) in zip(cols, items[i:i+4]):
+                    with col:
+                        choice = st.selectbox(label, options=column_options, key=skey, index=saved_index(skey))
+                        st.session_state[f"shadow_{skey}"] = choice
 
-            # Multiselect UI (controlled via top-level session_state keys)
-            if 'selected_companies' not in st.session_state:
-                st.session_state['selected_companies'] = []
-            if 'selected_types' not in st.session_state:
-                st.session_state['selected_types'] = []
-            if 'selected_operating_systems' not in st.session_state:
-                st.session_state['selected_operating_systems'] = []
+            st.info("Apabila ID tidak dipilih, ID akan otomatis diinputkan.", icon="ℹ️")
 
-            def _sync_selected_companies():
-                st.session_state.category['selected_companies'] = st.session_state.get('selected_companies', [])
+        # Copy original data for filtering and UI
+        df_original = st.session_state.laptops_data.copy()
 
-            def _sync_selected_types():
-                st.session_state.category['selected_types'] = st.session_state.get('selected_types', [])
-            
-            def _sync_selected_operating_systems():
-                st.session_state.category['selected_operating_systems'] = st.session_state.get('selected_operating_systems', [])
+        # Initialize selection lists in session_state
+        for k in ('selected_companies', 'selected_types', 'selected_operating_systems'):
+            if k not in st.session_state:
+                st.session_state[k] = []
 
-            # Filtering UI
-            st.write('## Filter Data Laptop')
-            st.multiselect("Pilih Company untuk Filtering", options=df_original['Company'].unique().tolist(), key='selected_companies', on_change=_sync_selected_companies)
-            st.multiselect("Pilih Tipe Laptop untuk Filtering", options=df_original['TypeName'].unique().tolist(), key='selected_types', on_change=_sync_selected_types)
-            st.multiselect("Pilih Operating System untuk Filtering", options=df_original['OpSys'].unique().tolist(), key='selected_operating_systems', on_change=_sync_selected_operating_systems)
+        def _sync_selected(key, state_key):
+            st.session_state.category[state_key] = st.session_state.get(key, [])
 
-            col1, col2, col3 = st.columns(3, gap="small")
+        # Filtering UI (guard for missing columns)
+        st.write('## Filter Data Laptop')
+        if 'Company' in df_original.columns:
+            st.multiselect("Pilih Company untuk Filtering", options=df_original['Company'].unique().tolist(), key='selected_companies', on_change=_sync_selected, args=('selected_companies', 'selected_companies'))
+        if 'TypeName' in df_original.columns:
+            st.multiselect("Pilih Tipe Laptop untuk Filtering", options=df_original['TypeName'].unique().tolist(), key='selected_types', on_change=_sync_selected, args=('selected_types', 'selected_types'))
+        if 'OpSys' in df_original.columns:
+            st.multiselect("Pilih Operating System untuk Filtering", options=df_original['OpSys'].unique().tolist(), key='selected_operating_systems', on_change=_sync_selected, args=('selected_operating_systems', 'selected_operating_systems'))
 
-            if filtered_company_data is not None:
-                with col1:
-                    st.write(f"**Data setelah filter Company ({len(filtered_company_data)} baris)**")
-                    st.dataframe(filtered_company_data, use_container_width=True)
+        col1, col2, col3 = st.columns(3, gap="small")
 
-            if filtered_typename_data is not None:
-                with col2:
-                    st.write(f"**Data setelah filter Tipe Laptop ({len(filtered_typename_data)} baris)**")
-                    st.dataframe(filtered_typename_data, use_container_width=True)
-            
-            if filtered_os_data is not None:
-                with col3:
-                    st.write(f"**Data setelah filter Operating System ({len(filtered_os_data)} baris)**")
-                    st.dataframe(filtered_os_data, use_container_width=True)
+        if filtered_company_data is not None and 'Company' in df_original.columns:
+            with col1:
+                st.write(f"**Data setelah filter Company ({len(filtered_company_data)} baris)**")
+                st.dataframe(filtered_company_data, use_container_width=True)
 
-            def _select_all():
+        if filtered_typename_data is not None and 'TypeName' in df_original.columns:
+            with col2:
+                st.write(f"**Data setelah filter Tipe Laptop ({len(filtered_typename_data)} baris)**")
+                st.dataframe(filtered_typename_data, use_container_width=True)
+
+        if filtered_os_data is not None and 'OpSys' in df_original.columns:
+            with col3:
+                st.write(f"**Data setelah filter Operating System ({len(filtered_os_data)} baris)**")
+                st.dataframe(filtered_os_data, use_container_width=True)
+
+        def _select_all():
+            if 'Company' in df_original.columns:
                 st.session_state['selected_companies'] = df_original['Company'].unique().tolist()
+            if 'TypeName' in df_original.columns:
                 st.session_state['selected_types'] = df_original['TypeName'].unique().tolist()
+            if 'OpSys' in df_original.columns:
+                st.session_state['selected_operating_systems'] = df_original['OpSys'].unique().tolist()
 
-            def _clear_all():
-                st.session_state['selected_companies'] = []
-                st.session_state['selected_types'] = []
+        def _clear_all():
+            st.session_state['selected_companies'] = []
+            st.session_state['selected_types'] = []
+            st.session_state['selected_operating_systems'] = []
 
-            st.container()
-            col1, col2 = st.columns(2, gap="small", width=260)
-            col1.button("Select All", on_click=_select_all)
-            col2.button("Clear All Filter", on_click=_clear_all)
+        st.container()
+        cb1, cb2 = st.columns(2, gap="small", width=260)
+        cb1.button("Select All", on_click=_select_all)
+        cb2.button("Clear All Filter", on_click=_clear_all)
 
-            # determine effective selections (empty means all)
-            sel_companies = st.session_state.get('selected_companies', [])
-            sel_types = st.session_state.get('selected_types', [])
-            if not sel_companies:
-                sel_companies = df_original['Company'].unique().tolist()
-            if not sel_types:
-                sel_types = df_original['TypeName'].unique().tolist()
+        # Effective selections (empty => all)
+        sel_companies = st.session_state.get('selected_companies') or (df_original['Company'].unique().tolist() if 'Company' in df_original.columns else [])
+        sel_types = st.session_state.get('selected_types') or (df_original['TypeName'].unique().tolist() if 'TypeName' in df_original.columns else [])
+        sel_ops = st.session_state.get('selected_operating_systems') or (df_original['OpSys'].unique().tolist() if 'OpSys' in df_original.columns else [])
 
-            # apply filters to a working copy
-            df_filtered = df_original.copy()
-            if 'Company' in df_filtered.columns:
-                df_filtered = df_filtered[df_filtered['Company'].isin(sel_companies)]
-            if 'TypeName' in df_filtered.columns:
-                df_filtered = df_filtered[df_filtered['TypeName'].isin(sel_types)]
-        
-        st.html("<hr>")
+        # Apply filters
+        df_filtered = df_original.copy()
+        if 'Company' in df_filtered.columns and sel_companies:
+            df_filtered = df_filtered[df_filtered['Company'].isin(sel_companies)]
+        if 'TypeName' in df_filtered.columns and sel_types:
+            df_filtered = df_filtered[df_filtered['TypeName'].isin(sel_types)]
+        if 'OpSys' in df_filtered.columns and sel_ops:
+            df_filtered = df_filtered[df_filtered['OpSys'].isin(sel_ops)]
+
+        st.divider()
+
         if st.button("Filter Data Laptop"):
-            clean_laptops_df(df_filtered)
-            pass
-        st.markdown("<h1>Data Laptop Saat Ini</h1>", unsafe_allow_html=True)
-        st.dataframe(st.session_state.laptop_categorized_data, use_container_width=True)    
+            if mode == "Otomatis":
+                df_filtered_result = data_utils.automaticColumnTable(df_filtered)
+            else:
+                # Collect manual mapping choices (use shadows to avoid missing keys)
+                manual_mapping = {}
+                for label, key in manual_fields.items():
+                    manual_mapping[key] = st.session_state.get(f"shadow_{key}", "None")
+                df_filtered_result = data_utils.manualColumnTable(df_filtered, mapping=manual_mapping)
+
+        st.markdown("<h4>Data Laptop Saat Ini</h4>", unsafe_allow_html=True)
+
+        if df_filtered_result is None or df_filtered_result.empty:
+            st.warning("Tidak ada data yang cocok dengan filter yang diterapkan.")
+        else:
+            st.dataframe(df_filtered_result, use_container_width=True)
 
     
 
@@ -241,7 +221,7 @@ if menu == "Upload dan Filter":
 # ============= INPUT DATA LAPTOP =============
 elif menu == "Upload Data Laptop + Filtering":
     st.subheader("Upload Data CSV")
-    st.write("Format CSV: Company,TypeName,Inches,ScreenResolution,Cpu,Ram,Memory,Gpu,OpSys,Weight,Price")
+    st.write("Format CSV: Company,TypeName,Inches,ScreenResolution,Cpu,Ram,Memory,Gpu,OpSys,Weight,harga")
     st.write("Contoh format data:")
     st.table(pd.DataFrame({
         "Company": ["Company A", "Company B"],
@@ -254,7 +234,7 @@ elif menu == "Upload Data Laptop + Filtering":
         "Gpu": ["Nvidia GeForce GTX 1050 Ti", "AMD Radeon RX 580"],
         "OpSys": ["Windows 10", "Linux"],
         "Weight": ["1.5 kg", "2.0 kg"],
-        "Price (Euro)": ["69210.72", "213.12"]
+        "harga (Euro)": ["69210.72", "213.12"]
     }))
     
     # More general information on data upload
@@ -343,7 +323,7 @@ elif menu == "Upload Data Laptop + Filtering":
         if st.button("🧹 Bersihkan Data"):
             filtered_company_data = df_filtered[df_filtered['Company'].isin(sel_companies)]
             filtered_typename_data = df_filtered[df_filtered['TypeName'].isin(sel_types)]
-            df = clean_laptops_df(df_filtered)
+            df = data_utils.clean_laptops_df(df_filtered)
             st.session_state.cleaned_df = df
 
         st.divider()
@@ -392,7 +372,7 @@ elif menu == "Clustering (K-Means)":
                     "Budget Friendly": {
                         "description": "Laptop terjangkau untuk penggunaan umum (browsing, office, streaming)",
                         "icon": "💰",
-                        "features": ["Price", "Ram (GB)", "Memory (GB)"]
+                        "features": ["harga", "Ram (GB)", "Memory (GB)"]
                     },
                     "Programming & Development": {
                         "description": "Laptop untuk coding, compile, dan development software",
@@ -527,7 +507,7 @@ elif menu == "Clustering (K-Means)":
                     # Select axes for visualization
                     viz_col1, viz_col2, viz_col3 = st.columns(3)
                     with viz_col1:
-                        x_axis = st.selectbox("Sumbu X", options=available_cols, index=0 if 'Price' not in available_cols else available_cols.index('Price'))
+                        x_axis = st.selectbox("Sumbu X", options=available_cols, index=0 if 'harga' not in available_cols else available_cols.index('harga'))
                     with viz_col2:
                         y_axis = st.selectbox("Sumbu Y", options=available_cols, index=1 if len(available_cols) > 1 else 0)
                     with viz_col3:
@@ -553,7 +533,7 @@ elif menu == "Clustering (K-Means)":
                         with st.expander(f"**{category_name}** - {len(cluster_data)} laptop"):
                             # Summary statistics
                             st.write("**Karakteristik Rata-rata:**")
-                            summary_cols = ['Price', 'Ram (GB)', 'Memory (GB)', 'Prosesor_Score', 'GPU_Score', 'Weight (KG)']
+                            summary_cols = ['harga', 'Ram (GB)', 'Memory (GB)', 'Prosesor_Score', 'GPU_Score', 'Weight (KG)']
                             available_summary = [col for col in summary_cols if col in cluster_data.columns]
                             
                             if available_summary:
@@ -563,7 +543,7 @@ elif menu == "Clustering (K-Means)":
                             
                             # Sample laptops in this cluster
                             st.write("**Sample Laptop dalam Kategori:**")
-                            display_cols = ['Company', 'TypeName', 'Price', 'Ram (GB)', 'Memory (GB)', 'Prosesor_Score']
+                            display_cols = ['Company', 'TypeName', 'harga', 'Ram (GB)', 'Memory (GB)', 'Prosesor_Score']
                             available_display = [col for col in display_cols if col in cluster_data.columns]
                             st.dataframe(cluster_data[available_display].head(5), use_container_width=True)
                     
@@ -778,7 +758,7 @@ elif menu == "Perankingan (SAW)":
             if 'No' in st.session_state.saw_results.columns:
                 st.info("💡 **Kolom 'No'** menunjukkan nomor urut laptop dalam dataset asli untuk memudahkan pelacakan.")
             
-            display_cols = ['Peringkat', 'No', 'Company', 'TypeName', 'Price', 'Ram (GB)', 'Memory (GB)', 'Prosesor_Score', 'GPU_Score', 'SAW_Score']
+            display_cols = ['Peringkat', 'No', 'Company', 'TypeName', 'harga', 'Ram (GB)', 'Memory (GB)', 'Prosesor_Score', 'GPU_Score', 'SAW_Score']
             if 'Kategori' in st.session_state.saw_results.columns:
                 display_cols.insert(2, 'Kategori')
             
@@ -828,8 +808,8 @@ elif menu == "Hasil Rekomendasi":
                         st.write(f"📱 Tipe: {row['TypeName']}")
                     
                     st.write("\n**Spesifikasi:**")
-                    if 'Price' in row:
-                        st.write(f"💰 Harga: €{row['Price']:.2f}")
+                    if 'harga' in row:
+                        st.write(f"💰 Harga: €{row['harga']:.2f}")
                     if 'Ram (GB)' in row:
                         st.write(f"🧠 RAM: {int(row['Ram (GB)'])} GB")
                     if 'Memory (GB)' in row:

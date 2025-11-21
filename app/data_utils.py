@@ -1,4 +1,5 @@
 import pandas as pd
+import difflib
 try:
     from rapidfuzz import fuzz, process
     FUZZY_AVAILABLE = 'rapidfuzz'
@@ -371,3 +372,194 @@ def clean_laptops_df(df: pd.DataFrame) -> pd.DataFrame:
             traceback.print_exc()
 
     return df
+
+def automaticColumnTable(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Automatically identify and rename columns in the dataframe to match template structure.
+    Returns a dataframe with columns renamed to the standard template names.
+    
+    Args:
+        df: Input dataframe (can be raw or cleaned)
+        
+    Returns:
+        DataFrame with columns renamed to match template structure
+    """
+    
+    # 1. Define the FIXED template structure (order matters)
+    template_attributes = [
+        "ID", "Nama", "Merek", "Tipe Laptop", "Sistem Operasi", 
+        "Ukuran (Inches)", "Resolusi Layar", "CPU", "RAM", 
+        "Memory", "GPU", "Berat (KG)", "Harga"
+    ]
+    
+    # 2. Define clustering-relevant columns with their keywords
+    # Map template attributes to possible column names
+    clustering_targets = {
+        "ID": ["no", "id", "index", "key", "id_otomatis", "unnamed: 0"],
+        "Nama": ["name", "nama", "product name", "laptop name", "model name", "productname"],
+        "Merek": ["company", "brand", "merek", "manufacturer", "pabrikan"],
+        "Tipe Laptop": ["typename", "type name", "type", "tipe", "laptop type", "category"],
+        "Sistem Operasi": ["opsys", "os", "operating system", "sistem operasi"],
+        "Ukuran (Inches)": ["inches", "inch", "ukuran", "screen size", "layar"],
+        "Resolusi Layar": ["screenresolution", "screen resolution", "resolution", "resolusi"],
+        "CPU": ["cpu", "processor", "prosesor"],
+        "RAM": ["ram (gb)", "ram", "memory_system", "ddr"],
+        "Memory": ["memory (gb)", "memory", "storage", "disk"],
+        "GPU": ["gpu", "graphics", "vga"],
+        "Berat (KG)": ["weight (kg)", "weight", "berat", "bobot"],
+        "Harga": ["price", "harga", "cost", "biaya"]
+    }
+
+    mapped_columns = {}
+    available_df_columns = list(df.columns)
+    used_columns = []
+
+    # 2. Fuzzy Matching Helper
+    def get_best_match(keywords, columns, threshold=0.5):
+        """Find best matching column using exact and fuzzy matching"""
+        best_col = None
+        best_ratio = 0
+        best_priority = 0  # Track priority: 3=exact, 2=substring, 1=fuzzy
+        
+        for col in columns:
+            if col in used_columns:
+                continue
+            
+            col_lower = col.lower().replace('_', ' ').replace('(', '').replace(')', '').strip()
+            
+            # Check each keyword
+            for keyword in keywords:
+                keyword_lower = keyword.lower().replace('_', ' ').replace('(', '').replace(')', '').strip()
+                
+                # A. Exact match (highest priority)
+                if col_lower == keyword_lower:
+                    return col
+                
+                # B. Substring match - column contains keyword (high priority)
+                if keyword_lower in col_lower:
+                    # Prefer exact word boundaries and shorter column names
+                    ratio = len(keyword_lower) / max(len(col_lower), 1)
+                    if best_priority < 2 or (best_priority == 2 and ratio > best_ratio):
+                        best_priority = 2
+                        best_ratio = ratio
+                        best_col = col
+                
+                # C. Fuzzy similarity (fallback) - only if no substring match found
+                if best_priority < 2:
+                    ratio = difflib.SequenceMatcher(None, keyword_lower, col_lower).ratio()
+                    if ratio >= threshold and ratio > best_ratio:
+                        best_priority = 1
+                        best_ratio = ratio
+                        best_col = col
+        
+        return best_col if best_col else None
+
+    # 3. Execute Mapping in specific order to avoid conflicts
+    # Process in order of specificity to prevent wrong matches
+    priority_order = [
+        "Merek", "Tipe Laptop", "Memory", "Sistem Operasi", "Ukuran (Inches)",
+        "Resolusi Layar", "CPU", "RAM", "GPU", "Berat (KG)", "Harga", 
+        "ID", "Nama"
+    ]
+    
+    for target in priority_order:
+        if target in clustering_targets:
+            keywords = clustering_targets[target]
+            match = get_best_match(keywords, available_df_columns)
+            
+            if match:
+                mapped_columns[target] = match
+                used_columns.append(match)
+
+    # 4. Create new dataframe with renamed columns
+    result_df = df.copy()
+    
+    # Build rename mapping (old column name -> new template name)
+    rename_mapping = {}
+    for template_name, original_col in mapped_columns.items():
+        if original_col and original_col in result_df.columns:
+            rename_mapping[original_col] = template_name
+    
+    # Rename columns
+    result_df = result_df.rename(columns=rename_mapping)
+    
+    # Add ID column if not present
+    if "ID" not in result_df.columns:
+        result_df.insert(0, "ID", range(1, len(result_df) + 1))
+    
+    # Reorder columns to match template (only include columns that exist)
+    existing_template_cols = [col for col in template_attributes if col in result_df.columns]
+    other_cols = [col for col in result_df.columns if col not in existing_template_cols]
+    
+    # Final column order: template columns first, then any extra columns
+    final_cols = existing_template_cols + other_cols
+    result_df = result_df[final_cols]
+    
+    return result_df
+
+def manualColumnTable(df: pd.DataFrame, mapping: dict) -> pd.DataFrame:
+    """
+    Rename columns in the dataframe based on manual user selections.
+    Returns a dataframe with columns renamed to the standard template names.
+    
+    Args:
+        df: Input dataframe
+        mapping: Dictionary of manual column selections from selectboxes
+                 Keys are the selection keys, values are the selected column names
+    
+    Returns:
+        DataFrame with columns renamed to match template structure
+    """
+    
+    # Define the FIXED template structure (order matters)
+    template_attributes = [
+        "ID", "Nama", "Merek", "Tipe Laptop", "Sistem Operasi", 
+        "Ukuran (Inches)", "Resolusi Layar", "CPU", "RAM", 
+        "Memory", "GPU", "Berat (KG)", "Harga"
+    ]
+    
+    # Map selection keys to template attribute names
+    key_to_attribute = {
+        "idColSelection": "ID",
+        "nameColSelection": "Nama",
+        "companyColSelection": "Merek",
+        "laptopTypeColSelection": "Tipe Laptop",
+        "operatingSystemColSelection": "Sistem Operasi",
+        "inchesColSelection": "Ukuran (Inches)",
+        "screenResolutionColSelection": "Resolusi Layar",
+        "cpuColSelection": "CPU",
+        "ramColSelection": "RAM",
+        "memoryColSelection": "Memory",
+        "gpuColSelection": "GPU",
+        "beratColSelection": "Berat (KG)",
+        "hargaColSelection": "Harga"
+    }
+    
+    # Create new dataframe with renamed columns
+    result_df = df.copy()
+    
+    # Build rename mapping (original column -> template name)
+    rename_mapping = {}
+    for selection_key, template_name in key_to_attribute.items():
+        selected_col = mapping.get(selection_key, "None")
+        
+        # Only add to mapping if user selected a valid column
+        if selected_col and selected_col != "None" and selected_col in result_df.columns:
+            rename_mapping[selected_col] = template_name
+    
+    # Rename columns
+    result_df = result_df.rename(columns=rename_mapping)
+    
+    # Add ID column if not present
+    if "ID" not in result_df.columns:
+        result_df.insert(0, "ID", range(1, len(result_df) + 1))
+    
+    # Reorder columns to match template (only include columns that exist)
+    existing_template_cols = [col for col in template_attributes if col in result_df.columns]
+    other_cols = [col for col in result_df.columns if col not in existing_template_cols]
+    
+    # Final column order: template columns first, then any extra columns
+    final_cols = existing_template_cols + other_cols
+    result_df = result_df[final_cols]
+    
+    return result_df
