@@ -18,7 +18,7 @@ st.set_page_config(
 # Sidebar navigation
 menu = st.sidebar.selectbox(
     "Menu Navigasi",
-    ["Upload dan Filter", "Upload Data Laptop + Filtering","Clustering (K-Means)", "Pembobotan Kriteria (AHP)", 
+    ["Upload dan Filter","Clustering (K-Means)", "Pembobotan Kriteria (AHP)", 
      "Perankingan (SAW)", "Hasil Rekomendasi"]
 )
 
@@ -199,7 +199,7 @@ if menu == "Upload dan Filter":
         if st.button("Filter Data Laptop"):
             if mode == "Otomatis":
                 df_filtered_result = data_utils.automaticColumnTable(df_filtered)
-            else:
+            elif mode == "Manual":
                 # Collect manual mapping choices (use shadows to avoid missing keys)
                 manual_mapping = {}
                 for label, key in manual_fields.items():
@@ -208,138 +208,10 @@ if menu == "Upload dan Filter":
 
         st.markdown("<h4>Data Laptop Saat Ini</h4>", unsafe_allow_html=True)
 
-        if df_filtered_result is None or df_filtered_result.empty:
+        if df_filtered_result is None:
             st.warning("Tidak ada data yang cocok dengan filter yang diterapkan.")
         else:
             st.dataframe(df_filtered_result, use_container_width=True)
-
-    
-
-    
-
-
-# ============= INPUT DATA LAPTOP =============
-elif menu == "Upload Data Laptop + Filtering":
-    st.subheader("Upload Data CSV")
-    st.write("Format CSV: Company,TypeName,Inches,ScreenResolution,Cpu,Ram,Memory,Gpu,OpSys,Weight,harga")
-    st.write("Contoh format data:")
-    st.table(pd.DataFrame({
-        "Company": ["Company A", "Company B"],
-        "TypeName": ["Gaming", "Ultrabook"],
-        "Inches": [15.6, 13.3],
-        "ScreenResolution": ["IPS 1920x1080", "FULL HD 2560x1600"],
-        "Cpu": ["Intel Core i5 2.3GHz", "AMD A9-Series A9-9420 3GHz"],
-        "Ram": ["8GB", "16GB"],
-        "Memory": ["512 HDD", "1024 SSD"],
-        "Gpu": ["Nvidia GeForce GTX 1050 Ti", "AMD Radeon RX 580"],
-        "OpSys": ["Windows 10", "Linux"],
-        "Weight": ["1.5 kg", "2.0 kg"],
-        "harga (Euro)": ["69210.72", "213.12"]
-    }))
-    
-    # More general information on data upload
-    st.write("""
-    Catatan:
-    - Semua RAM Asumsi dalam generasi yang sama
-    """)
-    
-    # Display current data
-    if not st.session_state.laptops_data.empty:
-        st.subheader("📊 Data Laptop Saat Ini")
-        
-        if st.button("🗑️ Hapus Semua Data"):
-            st.session_state.laptops_data = pd.DataFrame()
-            st.rerun()
-            
-    st.markdown("---")
-
-    if st.session_state.laptops_data.empty:
-        st.warning("⚠️ Belum ada data laptop. Silakan input data terlebih dahulu.")
-    else:
-        df_original = st.session_state.laptops_data.copy()
-
-        # Multiselect UI (controlled via top-level session_state keys)
-        if 'selected_companies' not in st.session_state:
-            st.session_state['selected_companies'] = []
-        if 'selected_types' not in st.session_state:
-            st.session_state['selected_types'] = []
-
-        def _sync_selected_companies():
-            st.session_state.category['selected_companies'] = st.session_state.get('selected_companies', [])
-
-        def _sync_selected_types():
-            st.session_state.category['selected_types'] = st.session_state.get('selected_types', [])
-
-        # Filtering UI
-        st.write('## Filter Data Laptop')
-        st.multiselect("Pilih Company untuk Filtering", options=df_original['Company'].unique().tolist(), key='selected_companies', on_change=_sync_selected_companies)
-        st.multiselect("Pilih TypeName untuk Filtering", options=df_original['TypeName'].unique().tolist(), key='selected_types', on_change=_sync_selected_types)
-
-        col1, col2 = st.columns(2, gap="small")
-
-        if filtered_company_data is not None:
-            with col1:
-                st.write(f"**Data setelah filter Company ({len(filtered_company_data)} baris)**")
-                st.dataframe(filtered_company_data, use_container_width=True)
-
-        if filtered_typename_data is not None:
-            with col2:
-                st.write(f"**Data setelah filter TypeName ({len(filtered_typename_data)} baris)**")
-                st.dataframe(filtered_typename_data, use_container_width=True)
-
-        def _select_all():
-            st.session_state['selected_companies'] = df_original['Company'].unique().tolist()
-            st.session_state['selected_types'] = df_original['TypeName'].unique().tolist()
-
-        def _clear_all():
-            st.session_state['selected_companies'] = []
-            st.session_state['selected_types'] = []
-
-        st.container()
-        col1, col2 = st.columns(2, gap="small", width=260)
-        col1.button("Select All", on_click=_select_all)
-        col2.button("Clear All Filter", on_click=_clear_all)
-
-        # determine effective selections (empty means all)
-        sel_companies = st.session_state.get('selected_companies', [])
-        sel_types = st.session_state.get('selected_types', [])
-        if not sel_companies:
-            sel_companies = df_original['Company'].unique().tolist()
-        if not sel_types:
-            sel_types = df_original['TypeName'].unique().tolist()
-
-        # apply filters to a working copy
-        df_filtered = df_original.copy()
-        if 'Company' in df_filtered.columns:
-            df_filtered = df_filtered[df_filtered['Company'].isin(sel_companies)]
-        if 'TypeName' in df_filtered.columns:
-            df_filtered = df_filtered[df_filtered['TypeName'].isin(sel_types)]
-
-        # clean and cache data
-        if 'cleaned_df' not in st.session_state:
-            st.session_state.cleaned_df = None
-
-        
-        if st.button("🧹 Bersihkan Data"):
-            filtered_company_data = df_filtered[df_filtered['Company'].isin(sel_companies)]
-            filtered_typename_data = df_filtered[df_filtered['TypeName'].isin(sel_types)]
-            df = data_utils.clean_laptops_df(df_filtered)
-            st.session_state.cleaned_df = df
-
-        st.divider()
-        if df_filtered.empty:
-            try:
-                if st.session_state.cleaned_df.empty:
-                    st.warning("Tidak ada data yang cocok dengan filter yang diterapkan.")
-                else:
-                    st.subheader("Filtered Data Laptop")
-                    st.dataframe(df, use_container_width=True)
-
-            except Exception as e:
-                st.error(f"Tekan tombol ""'Bersihkan Data'"" untuk memulai pembersihan")
-        else:
-            st.subheader("Filtered Data Laptop")
-            st.dataframe(st.session_state.cleaned_df, use_container_width=True)
 
 # ============= K-MEANS CLUSTERING =============
 elif menu == "Clustering (K-Means)":
