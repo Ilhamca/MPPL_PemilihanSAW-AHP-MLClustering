@@ -1,3 +1,4 @@
+import re
 import pandas as pd
 import difflib
 try:
@@ -204,22 +205,26 @@ def clean_laptops_df(df: pd.DataFrame) -> pd.DataFrame:
     # Remove fully empty rows
     df = df.dropna(how='all')
 
+    # Ukuran (Inches) -> numeric
+    if 'Ukuran (Inches)' in df.columns:
+        df['Ukuran (Inches)'] = pd.to_numeric(df['Ukuran (Inches)'], errors='coerce')
+    
     # RAM -> numeric
-    if 'Ram' in df.columns:
+    if 'RAM' in df.columns:
         # keep original if missing
-        df['Ram'] = df['Ram'].astype(str).str.replace('GB', '', regex=False).str.strip()
-        df.loc[df['Ram'] == '', 'Ram'] = '0'
+        df['RAM'] = df['RAM'].astype(str).str.replace('GB', '', regex=False).str.strip()
+        df.loc[df['RAM'] == '', 'RAM'] = '0'
         try:
-            df['Ram'] = df['Ram'].astype(int)
-            df.rename(columns={'Ram': 'Ram (GB)'}, inplace=True)
+            df['RAM'] = df['RAM'].astype(float)
+            df.rename(columns={'RAM': 'RAM (GB)'}, inplace=True)
         except Exception:
             # fallback: leave as-is
             pass
 
     # Weight -> numeric (kg)
-    if 'Weight' in df.columns:
-        df['Weight'] = df['Weight'].astype(str).str.replace('kg', '', regex=False).str.strip()
-        df.loc[df['Weight'] == '', 'Weight'] = '0'
+    if 'Berat (KG)' in df.columns:
+        df['Berat (KG)'] = df['Berat (KG)'].astype(str).str.replace('kg', '', regex=False).str.strip()
+        df.loc[df['Berat (KG)'] == '', 'Berat (KG)'] = '0'
         try:
             df['Weight'] = df['Weight'].astype(float)
             df.rename(columns={'Weight': 'Weight (KG)'}, inplace=True)
@@ -261,7 +266,7 @@ def clean_laptops_df(df: pd.DataFrame) -> pd.DataFrame:
             pass
 
     # CPU mapping with fuzzy search: use cpu_data.csv only
-    if 'Cpu' in df.columns:
+    if 'CPU' in df.columns:
         try:
             cpu_scores = pd.read_csv('csv/cpu_data.csv')
             cpu_name_col = 'Nama CPU'
@@ -278,11 +283,11 @@ def clean_laptops_df(df: pd.DataFrame) -> pd.DataFrame:
                 # Get list of available CPU names
                 cpu_list = cpu_scores['Normalized_CPU'].dropna().tolist()
                 
-                # Initialize Prosesor_Score column
-                df['Prosesor_Score'] = pd.NA
+                # Initialize CPU_Score column
+                df['CPU_Score'] = pd.NA
                 
                 # Apply fuzzy matching for each CPU
-                for idx, cpu in df['Cpu'].items():
+                for idx, cpu in df['CPU'].items():
                     if pd.notna(cpu):
                         cpu_clean = str(cpu).strip()
                         
@@ -291,7 +296,7 @@ def clean_laptops_df(df: pd.DataFrame) -> pd.DataFrame:
                         if not exact_match.empty:
                             score_val = exact_match.iloc[0][cpu_mark_col]
                             if pd.notna(score_val):
-                                df.at[idx, 'Prosesor_Score'] = score_val
+                                df.at[idx, 'CPU_Score'] = score_val
                         else:
                             # Use fuzzy matching with lower threshold for better matches
                             matched_cpu = fuzzy_match_cpu(cpu_clean, cpu_list, threshold=60)
@@ -300,10 +305,10 @@ def clean_laptops_df(df: pd.DataFrame) -> pd.DataFrame:
                                 if not matched_row.empty:
                                     score_val = matched_row.iloc[0][cpu_mark_col]
                                     if pd.notna(score_val):
-                                        df.at[idx, 'Prosesor_Score'] = score_val
+                                        df.at[idx, 'CPU_Score'] = score_val
                 
-                # Prosesor_Score should already be numeric from the cleaned cpu_scores
-                df['Prosesor_Score'] = pd.to_numeric(df['Prosesor_Score'], errors='coerce')
+                # Convert CPU_Score to float64
+                df['CPU_Score'] = pd.to_numeric(df['CPU_Score'], errors='coerce').astype('float64')
                 
         except FileNotFoundError:
             # no cpu mapping available
@@ -315,7 +320,7 @@ def clean_laptops_df(df: pd.DataFrame) -> pd.DataFrame:
             traceback.print_exc()
 
     # GPU mapping with fuzzy search: use gpu_data.csv
-    if 'Gpu' in df.columns:
+    if 'GPU' in df.columns:
         try:
             gpu_scores = pd.read_csv('csv/gpu_data.csv')
             gpu_name_col = 'Nama GPU'
@@ -336,7 +341,7 @@ def clean_laptops_df(df: pd.DataFrame) -> pd.DataFrame:
                 df['GPU_Score'] = pd.NA
                 
                 # Apply fuzzy matching for each GPU
-                for idx, gpu in df['Gpu'].items():
+                for idx, gpu in df['GPU'].items():
                     if pd.notna(gpu):
                         gpu_clean = str(gpu).strip()
                         
@@ -369,6 +374,34 @@ def clean_laptops_df(df: pd.DataFrame) -> pd.DataFrame:
             # silent fail but could log error if needed
             import traceback
             print(f"GPU mapping error: {e}")
+            traceback.print_exc()
+
+    if 'Resolusi Layar' in df.columns:
+        try:
+            # Parse resolution strings and write numeric pixel count into new column 'Resolusi Layar_value'
+            def parse_resolution(res_str):
+                s = str(res_str).lower()
+                # normalize common separators
+                s = s.replace('×', 'x').replace(' ', '')
+                # look for two groups of 3-4 digits separated by any non-digit(s)
+                match = re.search(r'(\d{3,4})\D+?(\d{3,4})', s)
+                if match:
+                    width = int(match.group(1))
+                    height = int(match.group(2))
+                    return float(width * height)
+                # fallback for common keywords
+                if '4k' in s or 'uhd' in s:
+                    return float(3840 * 2160)
+                if 'fhd' in s or 'fullhd' in s:
+                    return float(1920 * 1080)
+                # avoid matching 'hd' in unrelated words like 'head' etc.
+                if 'hd' in s and 'hdmi' not in s:
+                    return float(1366 * 768)
+                return pd.NA
+
+            df['Resolusi Layar_value'] = df['Resolusi Layar'].apply(parse_resolution).astype('Float64')
+        except Exception:
+            import traceback
             traceback.print_exc()
 
     return df
@@ -535,31 +568,36 @@ def manualColumnTable(df: pd.DataFrame, mapping: dict) -> pd.DataFrame:
         "hargaColSelection": "Harga"
     }
     
-    # Create new dataframe with renamed columns
+    # Create new dataframe with only selected columns
     result_df = df.copy()
     
     # Build rename mapping (original column -> template name)
+    # Also track which columns to keep
     rename_mapping = {}
+    selected_columns = []
+    
     for selection_key, template_name in key_to_attribute.items():
         selected_col = mapping.get(selection_key, "None")
         
-        # Only add to mapping if user selected a valid column
+        # Only add to mapping if user selected a valid column (not "None")
         if selected_col and selected_col != "None" and selected_col in result_df.columns:
             rename_mapping[selected_col] = template_name
+            selected_columns.append(selected_col)
+    
+    # Keep only selected columns
+    result_df = result_df[selected_columns]
     
     # Rename columns
     result_df = result_df.rename(columns=rename_mapping)
     
     # Add ID column if not present
-    if "ID" not in result_df.columns:
+    if "ID" not in result_df.columns and selected_columns:
         result_df.insert(0, "ID", range(1, len(result_df) + 1))
     
     # Reorder columns to match template (only include columns that exist)
     existing_template_cols = [col for col in template_attributes if col in result_df.columns]
-    other_cols = [col for col in result_df.columns if col not in existing_template_cols]
     
-    # Final column order: template columns first, then any extra columns
-    final_cols = existing_template_cols + other_cols
-    result_df = result_df[final_cols]
+    # Final column order: template columns only
+    result_df = result_df[existing_template_cols]
     
     return result_df
