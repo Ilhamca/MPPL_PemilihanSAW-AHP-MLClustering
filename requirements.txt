@@ -2,8 +2,6 @@ streamlit
 pandas
 numpy
 scikit-learn
-openpyxl
-difflib
 regex
 re
 plotly
