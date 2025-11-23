@@ -226,8 +226,8 @@ def clean_laptops_df(df: pd.DataFrame) -> pd.DataFrame:
         df['Berat (KG)'] = df['Berat (KG)'].astype(str).str.replace('kg', '', regex=False).str.strip()
         df.loc[df['Berat (KG)'] == '', 'Berat (KG)'] = '0'
         try:
-            df['Weight'] = df['Weight'].astype(float)
-            df.rename(columns={'Weight': 'Weight (KG)'}, inplace=True)
+            df['Weight (KG)'] = df['Berat (KG)'].astype(float)
+            df.rename(columns={'Berat (KG)': 'Weight (KG)'}, inplace=True)
         except Exception:
             pass
 
@@ -399,7 +399,7 @@ def clean_laptops_df(df: pd.DataFrame) -> pd.DataFrame:
                     return float(1366 * 768)
                 return pd.NA
 
-            df['Resolusi Layar_value'] = df['Resolusi Layar'].apply(parse_resolution).astype('Float64')
+            df['Resolusi Layar_value'] = df['Resolusi Layar'].apply(parse_resolution).astype('float64')
         except Exception:
             import traceback
             traceback.print_exc()
